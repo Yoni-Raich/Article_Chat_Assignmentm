@@ -1,0 +1,17 @@
+# Current files to ignore
+Article_Chat_Assignmentm.md
+my_notse.md
+
+# Common files to ignore
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+node_modules/
+.env
+.env.local
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
