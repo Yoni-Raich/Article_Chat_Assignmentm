@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Annotated, Sequence
+from typing_extensions import TypedDict
 from datetime import datetime
+from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 
 
 class ArticleMetadata(BaseModel):
@@ -36,3 +39,12 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[str] = []
     confidence: float = 1.0
+
+
+# State definition with message history for LangGraph
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    query_type: QueryType
+    current_query: str
+    final_answer: str
+    sources: List[str]

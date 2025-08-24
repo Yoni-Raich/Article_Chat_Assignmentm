@@ -1,4 +1,3 @@
-# src/tools.py
 from langchain.tools import tool
 from typing import List, Dict, Optional
 from vector_store import VectorStore
@@ -18,11 +17,12 @@ def get_list_of_tools():
     return [
         search_articles,
         get_article_content,
+        fetch_article_by_url,
         analyze_sentiment_batch,
         get_articles_by_category,
         compare_articles,
         find_most_similar_article
-    ]
+]
 
 @tool
 def search_articles(query: str, max_results: int = 5) -> List[Dict]:
@@ -76,6 +76,34 @@ def get_article_content(article_url: str) -> str:
         return f"Title: {article['title']}\n\nContent: {article['full_content']}"
     
     return "Article not found in database"
+
+@tool
+def fetch_article_by_url(article_url: str) -> Dict:
+    """
+    Retrieve article information including its summary by URL.
+    Use this tool when a user provides a specific article URL and wants information about it.
+    
+    Args:
+        article_url: Complete URL of the article
+    
+    Returns:
+        Dict containing:
+        - title: Article title
+        - summary: Pre-generated summary of the article
+        - url: Article URL
+        - category: Article category
+        - keywords: Article keywords
+        - sentiment: Sentiment analysis
+        - full_content: Complete article text
+        - date: Publication date
+    """
+    if not vector_store:
+        return {"error": "Vector store not initialized"}
+    
+    # Convert URL to ID format
+    article_id = article_url.replace("https://", "").replace("/", "_")
+    return vector_store.get_by_id(article_id)
+    
 
 @tool
 def analyze_sentiment_batch(article_urls: List[str]) -> Dict:

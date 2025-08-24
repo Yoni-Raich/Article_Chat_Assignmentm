@@ -1,13 +1,10 @@
 # src/agent.py - Agent-based version with tools and memory
-from typing import TypedDict, List, Dict, Annotated, Sequence
-from typing_extensions import TypedDict
+from typing import List, Dict
 from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import create_react_agent, ToolNode
-from langgraph.graph.message import add_messages
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 import os
-from models import QueryType
+from models import QueryType, AgentState
 from logger import logger
 from tools import (
     init_tools,
@@ -17,16 +14,10 @@ from tools import (
     get_articles_by_category,
     compare_articles,
     get_all_articles_summary,
-    find_most_similar_article
+    find_most_similar_article,
+    fetch_article_by_url
 )
-
-# State definition with message history
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    query_type: QueryType
-    current_query: str
-    final_answer: str
-    sources: List[str]
+from agents import create_single_agent, create_multi_agent, create_all_agent
 
 class ArticleAgent:
     def __init__(self):
@@ -41,7 +32,7 @@ class ArticleAgent:
         
         # Tools for different query types
         init_tools()
-        self.single_tools = [find_most_similar_article]
+        self.single_tools = [find_most_similar_article, fetch_article_by_url]
         self.multi_tools = [search_articles, compare_articles, analyze_sentiment_batch, find_most_similar_article]
         self.all_tools = [get_all_articles_summary, get_articles_by_category, search_articles, find_most_similar_article]
         
@@ -54,9 +45,9 @@ class ArticleAgent:
         
         # Add nodes
         workflow.add_node("classify", self.classify_query)
-        workflow.add_node("single_agent", self.create_single_agent())
-        workflow.add_node("multi_agent", self.create_multi_agent())
-        workflow.add_node("all_agent", self.create_all_agent())
+        workflow.add_node("single_agent", create_single_agent(self.llm, self.single_tools))
+        workflow.add_node("multi_agent", create_multi_agent(self.llm, self.multi_tools))
+        workflow.add_node("all_agent", create_all_agent(self.llm, self.all_tools))
         workflow.add_node("synthesize", self.synthesize_answer)
         
         # Entry point
@@ -142,109 +133,17 @@ class ArticleAgent:
         """Route to appropriate agent"""
         return state["query_type"].type
     
-    def create_single_agent(self):
-        """Create agent for single article queries"""
-        def single_agent_node(state: AgentState) -> AgentState:
-            # Create a sub-agent with tools
-            
-            agent = create_react_agent(
-                prompt=SystemMessage(content="""
-                You are an article analysis assistant. When a user asks about a specific article:
-                1. If they mention an article title or topic, use find_most_similar_article to locate it
-                2. Always search for articles before providing answers
-                3. Use the tools available to find and analyze the requested content
 
-                Available tools:
-                - find_most_similar_article: Use this to find articles by title, topic, or description
-                """),
-                model=self.llm,
-                tools=self.single_tools
-            )
-            print(self.single_tools)
-            # Run the agent
-            result = agent.invoke({
-                "messages": state["messages"]
-            })
-            print(result)
-            # Update state with agent's messages
-            state["messages"] = result["messages"]
-            
-            # Extract sources from tool calls
-            sources = []
-            for msg in result["messages"]:
-                if hasattr(msg, 'tool_calls'):
-                    for call in msg.tool_calls:
-                        if 'article_url' in call.get('args', {}):
-                            sources.append(call['args']['article_url'])
-            
-            state["sources"] = sources[:3]  # Keep top 3 sources
-            return state
-        
-        return single_agent_node
     
-    def create_multi_agent(self):
-        """Create agent for multi-article analysis"""
-        def multi_agent_node(state: AgentState) -> AgentState:
-            agent = create_react_agent(
-                self.llm,
-                tools=self.multi_tools,
-                prompt=SystemMessage(content="""
-                You are comparing and analyzing multiple articles.
-                Use search_articles to find relevant content, then use compare_articles or analyze_sentiment_batch.
-                Focus on patterns, differences, and insights across articles.
-                """)
-            )
-            
-            result = agent.invoke({
-                "messages": state["messages"]
-            })
-            
-            state["messages"] = result["messages"]
-            
-            # Extract sources
-            sources = []
-            for msg in result["messages"]:
-                if hasattr(msg, 'tool_calls'):
-                    for call in msg.tool_calls:
-                        args = call.get('args', {})
-                        if 'article_urls' in args:
-                            sources.extend(args['article_urls'])
-                        elif 'url1' in args:
-                            sources.extend([args['url1'], args.get('url2', '')])
-            
-            state["sources"] = list(set(sources))[:5]
-            return state
-        
-        return multi_agent_node
+
     
-    def create_all_agent(self):
-        """Create agent for all-articles analysis"""
-        def all_agent_node(state: AgentState) -> AgentState:
-            agent = create_react_agent(
-                self.llm,
-                tools=self.all_tools,
-                state_modifier=SystemMessage(content="""
-                You are providing insights about the entire article collection.
-                Use get_all_articles_summary for statistics, get_articles_by_category for filtering.
-                Provide comprehensive overviews and trends.
-                """)
-            )
-            
-            result = agent.invoke({
-                "messages": state["messages"]
-            })
-            
-            state["messages"] = result["messages"]
-            state["sources"] = []  # All articles queries don't have specific sources
-            return state
-        
-        return all_agent_node
+
     
     def synthesize_answer(self, state: AgentState) -> AgentState:
         """Synthesize final answer from agent results"""
         # The last assistant message should contain the answer
         for msg in reversed(state["messages"]):
-            if msg.type == "ai" and not hasattr(msg, 'tool_calls'):
+            if msg.type == "ai" and not hasattr(msg, 'tool'):
                 state["final_answer"] = msg.content
                 break
         
@@ -266,13 +165,6 @@ class ArticleAgent:
         
         return state
     
-    def _get_history_context(self, state: AgentState) -> str:
-        """Get relevant conversation history - simplified since full context is now passed to classification"""
-        # Get recent messages from state (excluding current message)
-        history = state["messages"][:-1][-4:] if len(state["messages"]) > 1 else []
-        if history:
-            return "\n".join([f"{msg.type}: {msg.content[:150]}..." for msg in history])
-        return "No previous context"
     
     def _extract_tool_results(self, state: AgentState) -> str:
         """Extract tool results from messages"""
@@ -310,17 +202,11 @@ class ArticleAgent:
             "query_type": result.get("query_type", "unknown"),
             "conversation_messages": result.get("messages", [])  # Return full conversation for continuity
         }
-    
-    def clear_memory(self):
-        """Clear conversation memory - Note: In LangGraph, memory is handled per conversation thread"""
-        # With LangGraph persistence, memory clearing is handled at the thread/conversation level
-        # This method is kept for API compatibility but has no effect in the current implementation
-        pass
-
 
 if __name__ == "__main__":
     # Initialize
     agent = ArticleAgent()
-    query = "please summarize the key points of the 'The Wizard of Oz' article"
+    query = "What are the most commonly discussed entities across the articles?"
     response = agent.process_query(query)
-    print(response)
+    print("="*50)
+    print(response["answer"])
