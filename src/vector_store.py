@@ -5,6 +5,7 @@ from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.schema import Document
 from models import Article
+from logger import logger
 import json
 
 class VectorStore:
@@ -24,7 +25,7 @@ class VectorStore:
             persist_directory=persist_directory
         )
         
-        print(f"VectorStore initialized. Current articles: {self.db._collection.count()}")
+        logger.info(f"VectorStore initialized. Current articles: {self.db._collection.count()}")
     
     def add_article(self, article: Article) -> bool:
         """Add single article to vector store"""
@@ -50,11 +51,11 @@ class VectorStore:
             
             # Add to ChromaDB
             self.db.add_documents([doc], ids=[article.id])
-            print(f"Added article: {article.title[:50]}...")
+            logger.info(f"Added article: {article.title[:50]}...")
             return True
             
         except Exception as e:
-            print(f"Error adding article {article.id}: {e}")
+            logger.error(f"Error adding article {article.id}: {e}")
             return False
     
     def add_batch(self, articles: List[Article]) -> int:
@@ -64,7 +65,7 @@ class VectorStore:
             if self.add_article(article):
                 added += 1
         
-        print(f"Added {added}/{len(articles)} articles to vector store")
+        logger.info(f"Added {added}/{len(articles)} articles to vector store")
         return added
     
     def search(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
@@ -95,7 +96,7 @@ class VectorStore:
             return formatted_results
             
         except Exception as e:
-            print(f"Search error: {e}")
+            logger.error(f"Search error: {e}")
             return []
     
     def get_by_id(self, article_id: str) -> Optional[Dict]:
@@ -181,4 +182,4 @@ if __name__ == "__main__":
     # Test search
     results = store.search(" Which article is more positive about the topic of AI regulation?", k=20)
     for r in results:
-        print(f"- {r['title']}: {r['similarity_score']:.2f}")
+        logger.info(f"- {r['title']}: {r['similarity_score']:.2f}")
