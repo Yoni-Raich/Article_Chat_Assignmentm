@@ -6,6 +6,7 @@ import json
 import os
 from datetime import datetime
 from models import Article, ArticleMetadata
+from logger import logger
 
 class ArticleProcessor:
     def __init__(self, llm_provider = None):
@@ -36,7 +37,7 @@ class ArticleProcessor:
             return title, text[:5000]  # Limit text length
             
         except Exception as e:
-            print(f"Error fetching {url}: {e}")
+            logger.error(f"Error fetching {url}: {e}")
             return url, ""
     
     def process_with_llm(self, title: str, content: str) -> Dict:
@@ -71,7 +72,7 @@ class ArticleProcessor:
     
     def process_url(self, url: str) -> Article:
         """Main processing pipeline"""
-        print(f"Processing: {url}")
+        logger.info(f"Processing: {url}")
         
         # Fetch article
         title, content = self.fetch_article(url)
@@ -121,17 +122,17 @@ class ArticleProcessor:
                 indent=2,
                 default=str
             )
-        print(f"Saved {len(articles)} articles")
+        logger.info(f"Saved {len(articles)} articles")
 
 
 if __name__ == "__main__":
-    print("Starting article processing...")
+    logger.info("Starting article processing...")
     ingestion = ArticleProcessor()
     url = "https://techcrunch.com/2025/07/26/astronomer-winks-at-viral-notoriety-with-temporary-spokesperson-gwyneth-paltrow/"
     article = ingestion.process_url(url)
     if article:
-        print(f"Processed article: {article.title}")
+        logger.info(f"Processed article: {article.title}")
     else:
-        print("Failed to process article.")
+        logger.warning("Failed to process article.")
 
     ingestion.save_to_file([article])
