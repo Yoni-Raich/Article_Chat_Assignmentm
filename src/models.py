@@ -25,6 +25,12 @@ class QueryRequest(BaseModel):
     """User query request"""
     query: str
 
+class QueryType(BaseModel):
+    """Query type classification for routing"""
+    type: str = Field(description="Query type: 'single', 'multi', or 'all'")
+    confidence: float = Field(description="Confidence score for classification", ge=0, le=1, default=1.0)
+    reasoning: str = Field(description="Brief explanation for the classification", default="")
+
 class QueryResponse(BaseModel):
     """Response to user query"""
     answer: str
