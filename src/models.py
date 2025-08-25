@@ -1,7 +1,17 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Annotated, Sequence
-from typing_extensions import TypedDict
+"""
+Data models and schemas for the article chat application.
+
+This module defines Pydantic models for API requests, responses, and data structures
+used throughout the application.
+"""
+
+# Standard library imports
 from datetime import datetime
+from typing import List, Optional, Annotated, Sequence
+
+# Third-party imports
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 
@@ -10,8 +20,14 @@ class ArticleMetadata(BaseModel):
     """Structured metadata for LLM extraction"""
     summary: str = Field(description="2-3 sentence summary of the article")
     keywords: List[str] = Field(description="5-7 key topics from the article")
-    entities: List[str] = Field(description="5-10 important named entities (people, organizations, locations, products)", default_factory=list)
-    sentiment: float = Field(description="Sentiment score between -1 (negative) and 1 (positive)", ge=-1, le=1)
+    entities: List[str] = Field(
+        description="5-10 important named entities (people, organizations, locations, products)",
+        default_factory=list
+    )
+    sentiment: float = Field(
+        description="Sentiment score between -1 (negative) and 1 (positive)",
+        ge=-1, le=1
+    )
     category: str = Field(description="Article category")
 
 
@@ -41,7 +57,10 @@ class ArticleSource(BaseModel):
 class QueryResponse(BaseModel):
     """Standard API response to user queries"""
     response: str = Field(description="AI agent's response text")
-    sources: List[ArticleSource] = Field(default_factory=list, description="Relevant article sources")
+    sources: List[ArticleSource] = Field(
+        default_factory=list,
+        description="Relevant article sources"
+    )
     confidence: float = Field(default=1.0, description="Confidence score", ge=0, le=1)
     tools_used: List[str] = Field(default_factory=list, description="Tools used by agent")
 
@@ -68,6 +87,12 @@ class ErrorResponse(BaseModel):
 
 # State definition with message history for LangGraph
 class AgentState(TypedDict):
+    """
+    State definition for the LangGraph agent.
+
+    This class defines the state structure used by the agent to track
+    conversation history, current queries, and responses.
+    """
     messages: Annotated[Sequence[BaseMessage], add_messages]
     current_query: str
     final_answer: str

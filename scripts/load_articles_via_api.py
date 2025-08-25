@@ -4,10 +4,13 @@ Load articles via API to the remote ChromaDB used by Docker.
 This ensures articles are loaded into the same database that the Docker container uses.
 """
 
-import requests
-import time
+# Standard library imports
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Third-party imports
+import requests
 from tqdm import tqdm
 
 # All 17 article URLs from the assignment
@@ -50,7 +53,7 @@ def ingest_article(url: str, max_retries: int = 3) -> dict:
                 json={"url": url},
                 timeout=60  # 60 seconds timeout for each article
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 return {
@@ -68,7 +71,7 @@ def ingest_article(url: str, max_retries: int = 3) -> dict:
                         "error": error_msg,
                         "attempts": attempt + 1
                     }
-                
+
         except Exception as e:
             error_msg = str(e)
             if attempt == max_retries - 1:
@@ -78,10 +81,10 @@ def ingest_article(url: str, max_retries: int = 3) -> dict:
                     "error": error_msg,
                     "attempts": attempt + 1
                 }
-        
+
         # Wait before retry
         time.sleep(2 ** attempt)
-    
+
     return {
         "url": url,
         "success": False,
@@ -93,65 +96,65 @@ def load_all_articles(max_workers: int = 3):
     """Load all articles via API with parallel processing"""
     print("🚀 Loading Articles via API")
     print("=" * 50)
-    
+
     # Check server
     if not check_server_status():
         print("❌ API server is not running at http://localhost:8000")
         print("   Please make sure Docker is running: docker-compose up -d")
         return False
-    
+
     print(f"✅ API server is running")
     print(f"📊 Loading {len(ARTICLE_URLS)} articles with {max_workers} workers...\n")
-    
+
     results = []
     successful = 0
     failed = 0
-    
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_url = {
-            executor.submit(ingest_article, url): url 
+            executor.submit(ingest_article, url): url
             for url in ARTICLE_URLS
         }
-        
+
         # Process with progress bar
         with tqdm(total=len(ARTICLE_URLS), desc="Loading articles", unit="article") as pbar:
             for future in as_completed(future_to_url):
                 result = future.result()
                 results.append(result)
-                
+
                 if result["success"]:
                     successful += 1
                     pbar.set_postfix({"✅": "Success", "❌": f"{failed}"})
                 else:
                     failed += 1
                     pbar.set_postfix({"✅": f"{successful}", "❌": "Failed"})
-                
+
                 pbar.update(1)
-    
+
     # Print results
     print("\n" + "=" * 60)
     print("📊 LOADING RESULTS")
     print("=" * 60)
-    
+
     successful_articles = [r for r in results if r["success"]]
     failed_articles = [r for r in results if not r["success"]]
-    
+
     if successful_articles:
         print(f"✅ Successfully loaded {len(successful_articles)} articles:")
         for result in successful_articles:
             print(f"   • {result['url'].split('/')[-1]}")
-    
+
     if failed_articles:
         print(f"\n❌ Failed to load {len(failed_articles)} articles:")
         for result in failed_articles:
             print(f"   • {result['url'].split('/')[-1]}: {result['error']}")
-    
+
     print(f"\n🎉 SUMMARY:")
     print(f"   Total: {len(ARTICLE_URLS)}")
     print(f"   Successful: {successful}")
     print(f"   Failed: {failed}")
-    
+
     return failed == 0
 
 def main():
@@ -160,7 +163,7 @@ def main():
         success = load_all_articles()
         if success:
             print("\n🎊 All articles loaded successfully!")
-            
+
             # Test the loaded articles
             print("\n🔍 Testing loaded articles...")
             response = requests.post(
@@ -170,12 +173,12 @@ def main():
             if response.status_code == 200:
                 result = response.json()
                 print(f"✅ Test response: {result['response'][:100]}...")
-            
+
             return 0
         else:
             print("\n⚠️  Some articles failed to load. Check the errors above.")
             return 1
-            
+
     except Exception as e:
         print(f"\n💥 Script failed: {e}")
         return 1

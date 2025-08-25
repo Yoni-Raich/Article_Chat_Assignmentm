@@ -35,7 +35,7 @@ ARTICLE_URLS = [
     "https://techcrunch.com/2025/07/25/intel-is-spinning-off-its-network-and-edge-group/",
     "https://techcrunch.com/2025/07/27/wizard-of-oz-blown-up-by-ai-for-giant-sphere-screen/",
     "https://techcrunch.com/2025/07/27/doge-has-built-an-ai-tool-to-slash-federal-regulations/",
-    
+
     # CNN URLs
     "https://edition.cnn.com/2025/07/27/business/us-china-trade-talks-stockholm-intl-hnk",
     "https://edition.cnn.com/2025/07/27/business/trump-us-eu-trade-deal",
@@ -54,11 +54,11 @@ class ArticleInitializer:
     Handles initialization of articles into the vector database with parallel processing,
     progress tracking, and comprehensive error handling.
     """
-    
+
     def __init__(self, max_workers: int = 4, retry_attempts: int = 3):
         """
         Initialize the article processor.
-        
+
         Args:
             max_workers: Maximum number of parallel workers
             retry_attempts: Number of retry attempts for failed URLs
@@ -67,7 +67,7 @@ class ArticleInitializer:
         self.retry_attempts = retry_attempts
         self.processor = ArticleProcessor()
         self.vector_store = VectorStore()
-        
+
         # Statistics tracking
         self.stats = {
             "total": 0,
@@ -77,49 +77,49 @@ class ArticleInitializer:
             "start_time": None,
             "end_time": None
         }
-    
+
     def check_existing_articles(self, urls: List[str]) -> Tuple[List[str], List[str]]:
         """
         Check which articles already exist in the database.
-        
+
         Args:
             urls: List of URLs to check
-            
+
         Returns:
             Tuple of (new_urls, existing_urls)
         """
         new_urls = []
         existing_urls = []
-        
+
         logger.info("🔍 Checking for existing articles...")
-        
+
         for url in urls:
             article_id = url.replace("https://", "").replace("/", "_")
             if self.vector_store.article_exists(article_id):
                 existing_urls.append(url)
             else:
                 new_urls.append(url)
-        
+
         logger.info(f"Found {len(existing_urls)} existing articles, {len(new_urls)} new articles to process")
         return new_urls, existing_urls
-    
+
     def process_single_article(self, url: str) -> Dict[str, any]:
         """
         Process a single article with retry logic.
-        
+
         Args:
             url: Article URL to process
-            
+
         Returns:
             Result dictionary with success status and details
         """
         for attempt in range(self.retry_attempts + 1):
             try:
                 logger.info(f"📄 Processing: {url} (attempt {attempt + 1})")
-                
+
                 # Process the article
                 article = self.processor.process_url(url)
-                
+
                 if not article:
                     return {
                         "url": url,
@@ -127,10 +127,10 @@ class ArticleInitializer:
                         "error": "Failed to fetch or process article",
                         "attempts": attempt + 1
                     }
-                
+
                 # Add to vector store
                 success = self.vector_store.add_article(article)
-                
+
                 if success:
                     return {
                         "url": url,
@@ -145,11 +145,11 @@ class ArticleInitializer:
                         "error": "Failed to add to vector store",
                         "attempts": attempt + 1
                     }
-                    
+
             except Exception as e:
                 error_msg = f"Error processing article: {str(e)}"
                 logger.warning(f"❌ Attempt {attempt + 1} failed for {url}: {error_msg}")
-                
+
                 if attempt == self.retry_attempts:
                     return {
                         "url": url,
@@ -157,42 +157,42 @@ class ArticleInitializer:
                         "error": error_msg,
                         "attempts": attempt + 1
                     }
-                
+
                 # Wait before retry
                 time.sleep(2 ** attempt)  # Exponential backoff
-        
+
         return {
             "url": url,
             "success": False,
             "error": "Max retries exceeded",
             "attempts": self.retry_attempts + 1
         }
-    
+
     def process_articles_parallel(self, urls: List[str]) -> List[Dict[str, any]]:
         """
         Process multiple articles in parallel with progress tracking.
-        
+
         Args:
             urls: List of URLs to process
-            
+
         Returns:
             List of result dictionaries
         """
         results = []
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all tasks
             future_to_url = {
-                executor.submit(self.process_single_article, url): url 
+                executor.submit(self.process_single_article, url): url
                 for url in urls
             }
-            
+
             # Process completed tasks with progress bar
             with tqdm(total=len(urls), desc="Processing articles", unit="article") as pbar:
                 for future in as_completed(future_to_url):
                     result = future.result()
                     results.append(result)
-                    
+
                     # Update progress bar
                     if result["success"]:
                         pbar.set_postfix({"✅": f"{result['title'][:30]}..."})
@@ -200,76 +200,76 @@ class ArticleInitializer:
                     else:
                         pbar.set_postfix({"❌": f"Failed: {result['url'].split('/')[-1]}"})
                         self.stats["failed"] += 1
-                    
+
                     pbar.update(1)
-        
+
         return results
-    
+
     def initialize_all_articles(self, urls: List[str] = None) -> Dict[str, any]:
         """
         Main method to initialize all articles.
-        
+
         Args:
             urls: List of URLs to process (defaults to ARTICLE_URLS)
-            
+
         Returns:
             Summary statistics
         """
         if urls is None:
             urls = ARTICLE_URLS
-        
+
         self.stats["total"] = len(urls)
         self.stats["start_time"] = time.time()
-        
+
         logger.info("🚀 Starting article database initialization...")
         logger.info(f"📊 Total articles to process: {len(urls)}")
-        
+
         # Check for existing articles
         new_urls, existing_urls = self.check_existing_articles(urls)
         self.stats["skipped"] = len(existing_urls)
-        
+
         if existing_urls:
             logger.info(f"⏭️  Skipping {len(existing_urls)} existing articles")
-        
+
         if not new_urls:
             logger.info("✅ All articles already exist in database!")
             self.stats["end_time"] = time.time()
             return self.get_summary()
-        
+
         # Process new articles
         logger.info(f"🔄 Processing {len(new_urls)} new articles with {self.max_workers} workers...")
         results = self.process_articles_parallel(new_urls)
-        
+
         self.stats["end_time"] = time.time()
-        
+
         # Log results
         self.log_results(results)
-        
+
         return self.get_summary()
-    
+
     def log_results(self, results: List[Dict[str, any]]):
         """Log detailed results of the processing."""
         logger.info("\n" + "="*60)
         logger.info("📊 PROCESSING RESULTS")
         logger.info("="*60)
-        
+
         successful_articles = [r for r in results if r["success"]]
         failed_articles = [r for r in results if not r["success"]]
-        
+
         if successful_articles:
             logger.info(f"✅ Successfully processed {len(successful_articles)} articles:")
             for result in successful_articles:
                 logger.info(f"   • {result['title'][:60]}...")
-        
+
         if failed_articles:
             logger.info(f"\n❌ Failed to process {len(failed_articles)} articles:")
             for result in failed_articles:
                 logger.info(f"   • {result['url']}: {result['error']} (attempts: {result['attempts']})")
-    
+
     def get_summary(self) -> Dict[str, any]:
         """Get processing summary statistics."""
         duration = self.stats["end_time"] - self.stats["start_time"] if self.stats["end_time"] else 0
-        
+
         return {
             "total_urls": self.stats["total"],
             "successful": self.stats["successful"],
@@ -284,13 +284,13 @@ def main():
     """Main entry point for the script."""
     print("🚀 Article Database Initialization")
     print("=" * 50)
-    
+
     # Initialize and run
     initializer = ArticleInitializer(max_workers=3, retry_attempts=2)
-    
+
     try:
         summary = initializer.initialize_all_articles()
-        
+
         # Print final summary
         print("\n🎉 INITIALIZATION COMPLETE!")
         print("=" * 50)
@@ -300,14 +300,14 @@ def main():
         print(f"⏭️  Skipped (existing): {summary['skipped']}")
         print(f"⏱️  Duration: {summary['duration_seconds']} seconds")
         print(f"📈 Rate: {summary['articles_per_minute']} articles/minute")
-        
+
         if summary['failed'] > 0:
             print(f"\n⚠️  {summary['failed']} articles failed to process. Check logs for details.")
             return 1
         else:
             print(f"\n🎊 All articles processed successfully!")
             return 0
-            
+
     except Exception as e:
         logger.error(f"💥 Initialization failed with error: {e}")
         return 1

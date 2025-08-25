@@ -1,3 +1,9 @@
+"""
+Tests for the article analysis agent.
+
+This module contains unit tests for testing the agent functionality.
+"""
+
 import sys
 import os
 # Add the project root to Python path
@@ -16,7 +22,7 @@ def test_agent_basic_functionality():
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
     pre_built_agent = create_react_agent(
-        llm, 
+        llm,
         tools=tools,
         prompt=SystemMessage(content=" You are an article analysis assistant and your task is to find the best tool to use to solve the user's query.")
     )

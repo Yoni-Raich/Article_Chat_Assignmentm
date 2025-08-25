@@ -1,11 +1,5 @@
 """
-FastAPfrom fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
-from typing import Optional
-import uvicornn application for Article Chat System.
+FastAPI application for Article Chat System.
 
 This module provides REST API endpoints for:
 - Chat functionality with the AI agent
@@ -13,23 +7,27 @@ This module provides REST API endpoints for:
 - Health checks and status
 """
 
+# Standard library imports
 import os
 import sys
+from contextlib import asynccontextmanager
+from typing import Optional
+from datetime import datetime
+
+# Third-party imports
+import uvicorn
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
-from typing import Optional
-from datetime import datetime
-import uvicorn
 
 # Get the project root directory and add to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
+# Local imports
 from src.agent import ArticleAnalysisAgent
-from src.models import QueryRequest, QueryResponse, IngestRequest, IngestResponse, ArticleSource, ErrorResponse
+from src.models import QueryRequest, QueryResponse, IngestRequest, IngestResponse, ArticleSource
 from src.ingestion import ArticleProcessor
 from src.vector_store import VectorStore
 from src.cache import QueryCache
@@ -48,32 +46,32 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     global agent, article_processor, vector_store, query_cache
-    
+
     print("🚀 Starting Article Chat API...")
-    
+
     try:
         # Initialize query cache first
         print("🔧 Initializing query cache...")
         query_cache = QueryCache(max_size=200, ttl_seconds=3600)  # 1 hour TTL
-        
+
         # Initialize components
         print("🔧 Initializing vector store...")
         vector_store = VectorStore()
-        
+
         print("🔧 Initializing article processor...")
         article_processor = ArticleProcessor()
-        
+
         print("🔧 Initializing AI agent...")
         agent = ArticleAnalysisAgent()
-        
+
         print("✅ All components initialized successfully!")
-        
+
     except Exception as e:
         print(f"❌ Failed to initialize application: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
     print("🛑 Shutting down Article Chat API...")
 
@@ -127,10 +125,10 @@ async def get_stats():
     try:
         # Import here to avoid circular imports during startup
         from src.vector_store import VectorStore
-        
+
         vector_store = VectorStore()
         articles = vector_store.get_all_articles()
-        
+
         return {
             "article_count": len(articles),
             "status": "healthy",
@@ -162,20 +160,20 @@ async def health_check():
 async def chat(request: QueryRequest):
     """
     Chat endpoint - send a query to the AI agent and get a response.
-    
+
     This endpoint processes user questions about articles using the AI agent
     with access to the vector database and various analysis tools.
-    
+
     Features automatic caching of responses for repeated queries.
     """
     global agent, vector_store, query_cache
-    
+
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI agent not initialized"
         )
-    
+
     try:
         # Check cache first for repeated queries
         if query_cache:
@@ -185,22 +183,22 @@ async def chat(request: QueryRequest):
                 return QueryResponse(**cached_response)
             else:
                 print(f"🔍 Cache MISS for query: '{request.query[:50]}...'")
-        
+
         # Clear previous tools used (for new query)
         agent.used_tools = []
-        
+
         # Get response from agent (cache miss or no cache)
         answer = agent.query(request.query)
-        
+
         # Get tools used in the query
         tools_used = agent.get_used_tools()
-        
+
         # Get sources from vector store with similarity search
         sources = []
         if vector_store:
             # Search for relevant articles
             search_results = vector_store.search(request.query, k=request.max_articles)
-            
+
             for result in search_results:
                 article_source = ArticleSource(
                     title=result.get('title', 'Unknown Title'),
@@ -208,7 +206,7 @@ async def chat(request: QueryRequest):
                     relevance_score=result.get('similarity_score', 0.0)
                 )
                 sources.append(article_source)
-        
+
         # Prepare response data
         response_data = {
             "response": answer,
@@ -216,14 +214,14 @@ async def chat(request: QueryRequest):
             "confidence": 1.0,
             "tools_used": tools_used
         }
-        
+
         # Cache the response for future identical queries
         if query_cache:
             query_cache.set(request.query, response_data, request.max_articles)
             print(f"💾 Response cached for query: '{request.query[:50]}...'")
-        
+
         return QueryResponse(**response_data)
-        
+
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(
@@ -238,13 +236,13 @@ async def get_cache_stats():
     Get cache statistics and performance metrics.
     """
     global query_cache
-    
+
     if not query_cache:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Cache not initialized"
         )
-    
+
     try:
         return query_cache.stats()
     except Exception as e:
@@ -261,13 +259,13 @@ async def clear_cache():
     Clear all cached query responses.
     """
     global query_cache
-    
+
     if not query_cache:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Cache not initialized"
         )
-    
+
     try:
         query_cache.clear()
         return {"message": "Cache cleared successfully"}
@@ -285,13 +283,13 @@ async def cleanup_cache():
     Remove expired entries from cache.
     """
     global query_cache
-    
+
     if not query_cache:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Cache not initialized"
         )
-    
+
     try:
         removed_count = query_cache.cleanup_expired()
         return {
@@ -310,7 +308,7 @@ async def cleanup_cache():
 async def ingest_article(request: IngestRequest):
     """
     Article ingestion endpoint - add a new article by URL.
-    
+
     This endpoint fetches an article from the provided URL, processes it
     with AI to extract metadata, and adds it to the vector database.
     """
@@ -319,7 +317,7 @@ async def ingest_article(request: IngestRequest):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Article processor or vector store not initialized"
         )
-    
+
     try:
         # Check if article already exists
         article_id = request.url.replace("https://", "").replace("/", "_")
@@ -329,19 +327,19 @@ async def ingest_article(request: IngestRequest):
                 message="Article already exists in database",
                 article_id=article_id
             )
-        
+
         # Process the article
         article = article_processor.process_url(request.url)
-        
+
         if not article:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to fetch or process article from URL"
             )
-        
+
         # Add to vector store
         success = vector_store.add_article(article)
-        
+
         if success:
             return IngestResponse(
                 success=True,
@@ -354,7 +352,7 @@ async def ingest_article(request: IngestRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to add article to vector database"
             )
-            
+
     except HTTPException:
         raise
     except Exception as e:
