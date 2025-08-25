@@ -8,7 +8,7 @@ from typing import Dict, Any
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.agent import ArticleAnalysisAgent
+from src.agent4 import ArticleAnalysisAgent
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -135,13 +135,34 @@ def main():
             message_placeholder = st.empty()
             
             try:
-                # Show thinking indicator
-                with st.spinner("🤔 Thinking..."):
-                    # Get response from agent
-                    response = agent.query(prompt, st.session_state.thread_id)
+                # Create a placeholder for the status
+                status_placeholder = st.empty()
+                
+                # Use st.status for dynamic status updates
+                with status_placeholder.container():
+                    with st.status("🤔 Thinking...", expanded=False) as status:
+                        
+                        # Set up status callback for the agent
+                        def update_status(new_status):
+                            status.update(label=new_status)
+                        
+                        agent.set_status_callback(update_status)
+                        
+                        # Get response from agent
+                        response = agent.query(prompt, st.session_state.thread_id)
+                
+                # Clear the status completely
+                status_placeholder.empty()
                 
                 # Display the response
                 message_placeholder.markdown(response)
+                
+                # Show tools that were used
+                used_tools = agent.get_used_tools()
+                if used_tools:
+                    with st.expander(f"🔧 Tools used ({len(used_tools)})", expanded=False):
+                        for tool in used_tools:
+                            st.write(f"• {tool}")
                 
                 # Add assistant response to chat history
                 st.session_state.messages.append({"role": "assistant", "content": response})

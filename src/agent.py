@@ -28,6 +28,11 @@ class ArticleAnalysisAgent:
         init_tools()
         self.tools = get_list_of_tools()
         
+        # Add status tracking for UI
+        self.current_status = "🤔 Thinking..."
+        self.status_callback = None
+        self.used_tools = []  # Track tools used in current query
+        
         # Initialize LLM with tools
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
@@ -54,11 +59,30 @@ class ArticleAnalysisAgent:
         except Exception as e:
             print(f"Warning: Could not generate workflow graph: {e}")
     
+    def set_status_callback(self, callback):
+        """Set a callback function to update status in UI"""
+        self.status_callback = callback
+    
+    def _update_status(self, status):
+        """Update current status and call callback if set"""
+        self.current_status = status
+        if self.status_callback:
+            self.status_callback(status)
+    
     def _tool_execution_wrapper(self, state: MessagesState) -> Dict[str, Any]:
         """Wrapper for tool execution with logging"""
         # Get the last message which should contain tool calls
         messages = state["messages"]
         if messages and hasattr(messages[-1], 'tool_calls') and messages[-1].tool_calls:
+            # Track tools and update status with tool names
+            tool_names = [tool_call['name'] for tool_call in messages[-1].tool_calls]
+            self.used_tools.extend(tool_names)  # Add to used tools list
+            
+            if len(tool_names) == 1:
+                self._update_status(f"🔧 Running {tool_names[0]}...")
+            else:
+                self._update_status(f"🔧 Running {len(tool_names)} tools...")
+            
             print("\n⚙️  Executing tools:")
             for i, tool_call in enumerate(messages[-1].tool_calls, 1):
                 print(f"  {i}. Running {tool_call['name']}...")
@@ -67,9 +91,10 @@ class ArticleAnalysisAgent:
         # Execute the tool node
         result = self.tool_node.invoke(state)
         
-        # Print completion message
+        # Print completion message and update status
         if messages and hasattr(messages[-1], 'tool_calls') and messages[-1].tool_calls:
             print("✅ Tool execution completed\n")
+            self._update_status("🤔 Processing results...")
         
         return result
     
@@ -105,6 +130,9 @@ class ArticleAnalysisAgent:
         """
         Main agent node - decides whether to use tools or respond directly
         """
+        # Update status
+        self._update_status("🤔 Thinking...")
+        
         # Get the conversation history
         messages = state["messages"]
         
@@ -156,6 +184,9 @@ class ArticleAnalysisAgent:
         Returns:
             Agent's response
         """
+        # Reset used tools for new query
+        self.used_tools = []
+        
         config = {"configurable": {"thread_id": thread_id}}
         
         # Execute the workflow
@@ -166,6 +197,10 @@ class ArticleAnalysisAgent:
         
         # Return the final response
         return result["messages"][-1].content
+    
+    def get_used_tools(self) -> list:
+        """Get list of tools used in the last query"""
+        return list(set(self.used_tools))  # Remove duplicates
     
     def stream_query(self, question: str, thread_id: str = "default"):
         """
