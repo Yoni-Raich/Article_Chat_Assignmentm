@@ -43,6 +43,7 @@ class VectorStore:
                     "full_content": article.content,  # Store full text!
                     "summary": article.metadata.summary,
                     "keywords": json.dumps(article.metadata.keywords),
+                    "entities": json.dumps(article.metadata.entities),
                     "sentiment": article.metadata.sentiment,
                     "category": article.metadata.category,
                     "processed_at": str(article.processed_at)
@@ -88,6 +89,7 @@ class VectorStore:
                     "summary": doc.metadata.get("summary"),
                     "full_content": doc.metadata.get("full_content"),
                     "keywords": json.loads(doc.metadata.get("keywords", "[]")),
+                    "entities": json.loads(doc.metadata.get("entities", "[]")),
                     "sentiment": doc.metadata.get("sentiment"),
                     "category": doc.metadata.get("category"),
                     "similarity_score": 1 - score  # Convert distance to similarity
@@ -111,6 +113,7 @@ class VectorStore:
                 "full_content": metadata.get("full_content"),
                 "summary": metadata.get("summary"),
                 "keywords": json.loads(metadata.get("keywords", "[]")),
+                "entities": json.loads(metadata.get("entities", "[]")),
                 "sentiment": metadata.get("sentiment"),
                 "category": metadata.get("category")
             }
@@ -129,7 +132,8 @@ class VectorStore:
                     "title": metadata.get("title"),
                     "summary": metadata.get("summary"),
                     "category": metadata.get("category"),
-                    "sentiment": metadata.get("sentiment")
+                    "sentiment": metadata.get("sentiment"),
+                    "entities": json.loads(metadata.get("entities", "[]"))
                 })
         
         return articles
@@ -146,40 +150,3 @@ class VectorStore:
             return True
         except:
             return False
-
-
-if __name__ == "__main__":
-    from ingestion import ArticleProcessor
-    # Test URLs
-    # test_urls = [
-    #     "https://techcrunch.com/2025/07/26/astronomer-winks-at-viral-notoriety-with-temporary-spokesperson-gwyneth-paltrow/",
-    #     "https://techcrunch.com/2025/07/26/allianz-life-says-majority-of-customers-personal-data-stolen-in-cyberattack/",
-    #     "https://techcrunch.com/2025/07/27/itch-io-is-the-latest-marketplace-to-crack-down-on-adult-games/",
-    #     "https://techcrunch.com/2025/07/26/tesla-vet-says-that-reviewing-real-products-not-mockups-is-the-key-to-staying-innovative/",
-    #     "https://techcrunch.com/2025/07/25/meta-names-shengjia-zhao-as-chief-scientist-of-ai-superintelligence-unit/",
-    #     "https://techcrunch.com/2025/07/26/dating-safety-app-tea-breached-exposing-72000-user-images/",
-    #     "https://techcrunch.com/2025/07/25/sam-altman-warns-theres-no-legal-confidentiality-when-using-chatgpt-as-a-therapist/",
-    #     "https://techcrunch.com/2025/07/25/intel-is-spinning-off-its-network-and-edge-group/",
-    #     "https://techcrunch.com/2025/07/27/wizard-of-oz-blown-up-by-ai-for-giant-sphere-screen/",
-    #     "https://techcrunch.com/2025/07/27/doge-has-built-an-ai-tool-to-slash-federal-regulations/",
-    #     "https://edition.cnn.com/2025/07/27/business/us-china-trade-talks-stockholm-intl-hnk",
-    #     "https://edition.cnn.com/2025/07/27/business/trump-us-eu-trade-deal",
-    #     "https://edition.cnn.com/2025/07/27/business/eu-trade-deal",
-    #     "https://edition.cnn.com/2025/07/26/tech/daydream-ai-online-shopping",
-    #     "https://edition.cnn.com/2025/07/25/tech/meta-ai-superintelligence-team-who-its-hiring",
-    #     "https://edition.cnn.com/2025/07/25/tech/sequoia-islamophobia-maguire-mamdani",
-    #     "https://edition.cnn.com/2025/07/24/tech/intel-layoffs-15-percent-q2-earnings"
-    # ]
-
-    # # Process articles
-    # processor = ArticleProcessor()
-    # articles = processor.process_batch(test_urls)
-
-    # Add to vector store
-    store = VectorStore()
-    #store.add_batch(articles)
-
-    # Test search
-    results = store.search(" Which article is more positive about the topic of AI regulation?", k=20)
-    for r in results:
-        logger.info(f"- {r['title']}: {r['similarity_score']:.2f}")

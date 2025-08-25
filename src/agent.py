@@ -1,223 +1,227 @@
-# src/agent.py - Agent-based version with tools and memory
-from typing import List, Dict
-from langgraph.graph import StateGraph, START, END
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 import os
-from models import QueryType, AgentState
-from logger import logger
-from tools import (
-    init_tools,
-    search_articles,
-    get_article_content,
-    analyze_sentiment_batch,
-    get_articles_by_category,
-    compare_articles,
-    get_all_articles_summary,
-    find_most_similar_article,
-    fetch_article_by_url,
-    get_most_common_entities,
-    get_entities_by_type,
-    analyze_entity_sentiment,
-    find_articles_by_entity,
-    get_all_articles
-)
-from agents import create_single_agent, create_multi_agent, create_all_agent
+import asyncio
+from typing import Literal, Dict, Any
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver
 
-class ArticleAgent:
+# Import your existing tools
+from tools import init_tools, get_list_of_tools
+
+class ArticleAnalysisAgent:
+    """
+    Elegant LangGraph agent for article analysis with VectorDB integration
+    """
+    
     def __init__(self):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=0.3
-        )
+        # Ensure we have an event loop for async operations
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop in current thread, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
-        # Note: Memory is now handled by LangGraph state persistence
-        # The 'messages' field in AgentState automatically accumulates conversation history
-        
-        # Tools for different query types
+        # Initialize tools with dependencies
         init_tools()
-        self.single_tools = [find_most_similar_article, fetch_article_by_url]
-        self.multi_tools = [get_all_articles, search_articles, compare_articles, analyze_sentiment_batch, find_most_similar_article]
-        self.all_tools = [get_all_articles_summary, get_articles_by_category, search_articles, find_most_similar_article, 
-                         get_most_common_entities, get_entities_by_type, analyze_entity_sentiment, find_articles_by_entity, get_all_articles]
+        self.tools = get_list_of_tools()
         
-        # Build the main graph
+        # Initialize LLM with tools
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key=os.getenv("GOOGLE_API_KEY"),
+            temperature=0.1
+        ).bind_tools(self.tools)
+        
+        # Create tool node
+        self.tool_node = ToolNode(self.tools)
+        
+        # Build the graph
         self.graph = self._build_graph()
+        
+        # Add memory for stateful conversations
+        memory = MemorySaver()
+        self.app = self.graph.compile(checkpointer=memory)
+        
+        # Try to generate graph image, but don't fail if it doesn't work
+        try:
+            graph_image = self.app.get_graph().draw_mermaid_png()
+            # Save to file
+            with open("workflow_graph.png", "wb") as f:
+                f.write(graph_image)
+        except Exception as e:
+            print(f"Warning: Could not generate workflow graph: {e}")
+    
+    def _tool_execution_wrapper(self, state: MessagesState) -> Dict[str, Any]:
+        """Wrapper for tool execution with logging"""
+        # Get the last message which should contain tool calls
+        messages = state["messages"]
+        if messages and hasattr(messages[-1], 'tool_calls') and messages[-1].tool_calls:
+            print("\n⚙️  Executing tools:")
+            for i, tool_call in enumerate(messages[-1].tool_calls, 1):
+                print(f"  {i}. Running {tool_call['name']}...")
+            print()
+        
+        # Execute the tool node
+        result = self.tool_node.invoke(state)
+        
+        # Print completion message
+        if messages and hasattr(messages[-1], 'tool_calls') and messages[-1].tool_calls:
+            print("✅ Tool execution completed\n")
+        
+        return result
     
     def _build_graph(self) -> StateGraph:
-        """Build the main orchestrator graph"""
-        workflow = StateGraph(AgentState)
+        """Build the LangGraph workflow"""
+        
+        # Define the graph with MessagesState
+        workflow = StateGraph(MessagesState)
         
         # Add nodes
-        workflow.add_node("classify", self.classify_query)
-        workflow.add_node("single_agent", create_single_agent(self.llm, self.single_tools))
-        workflow.add_node("multi_agent", create_multi_agent(self.llm, self.multi_tools))
-        workflow.add_node("all_agent", create_all_agent(self.llm, self.all_tools))
-        workflow.add_node("synthesize", self.synthesize_answer)
+        workflow.add_node("agent", self._call_agent)
+        workflow.add_node("tools", self._tool_execution_wrapper)
         
-        # Entry point
-        workflow.add_edge(START, "classify")
+        # Set entry point
+        workflow.add_edge(START, "agent")
         
-        # Conditional routing based on classification
+        # Add conditional routing after agent
         workflow.add_conditional_edges(
-            "classify",
-            self.route_by_type,
+            "agent",
+            tools_condition,  # Built-in condition checker
             {
-                "single": "single_agent",
-                "multi": "multi_agent",
-                "all": "all_agent"
+                "tools": "tools",  # If tools are called, go to tools
+                END: END,         # If no tools, end conversation
             }
         )
         
-        # All agents lead to synthesis
-        workflow.add_edge("single_agent", "synthesize")
-        workflow.add_edge("multi_agent", "synthesize")
-        workflow.add_edge("all_agent", "synthesize")
-        workflow.add_edge("synthesize", END)
-        graph = workflow.compile()
-        graph_image = graph.get_graph().draw_mermaid_png()
-
-        # Save to file
-        with open("workflow_graph.png", "wb") as f:
-            f.write(graph_image)
-        return graph
-
-    def classify_query(self, state: AgentState) -> AgentState:
-        """Classify query into single/multi/all"""
-        # Get the last user message
-        last_message = state["messages"][-1].content if state["messages"] else ""
-        state["current_query"] = last_message
+        # Return to agent after tool execution
+        workflow.add_edge("tools", "agent")
         
-        # Configure the LLM with structured output using Pydantic model
-        structured_llm = self.llm.with_structured_output(QueryType)
-        
-        # Build classification prompt with full conversation context
-        classification_prompt = """
-        Classify this query into ONE category based on the ENTIRE conversation context:
-        - "single": Query about ONE specific article or topic requiring detailed info
-        - "multi": Query comparing or analyzing 2-5 articles  
-        - "all": Query about all articles, statistics, or broad analysis
-        
-        Consider the full conversation history to understand if this is:
-        - A new question (classify based on the current query)
-        - A follow-up question (classify based on what the user is asking about from the previous context)
-        
-        Provide:
-        - type: one of "single", "multi", or "all"
-        - confidence: how confident you are in this classification (0.0 to 1.0)
-        - reasoning: brief explanation for your choice
+        return workflow
+    
+    def _call_agent(self, state: MessagesState) -> Dict[str, Any]:
         """
+        Main agent node - decides whether to use tools or respond directly
+        """
+        # Get the conversation history
+        messages = state["messages"]
         
-        # Create messages list with classification prompt + full conversation history
-        classification_messages = [SystemMessage(content=classification_prompt)]
-        classification_messages.extend(state["messages"])
+        # Add system message for article analysis context
+        system_message = SystemMessage(content="""
+        You are an expert article analysis assistant. You have access to a comprehensive vector database 
+        containing articles with the following capabilities:
         
-        try:
-            # Invoke the structured LLM
-            response = structured_llm.invoke(classification_messages)
-            query_type = response.type            
-            # Validate the response
-            if query_type not in ["single", "multi", "all"]:
-                raise ValueError(f"Invalid query type: {query_type}")
-                
-        except Exception as e:
-            print(f"Structured classification failed: {e}, falling back to keyword-based classification")
-            # Fallback to keyword-based classification
-            if any(word in last_message.lower() for word in ["all", "every", "total", "statistics"]):
-                query_type = "all"
-            elif any(word in last_message.lower() for word in ["compare", "difference", "between"]):
-                query_type = "multi"
-            else:
-                query_type = "single"
+        - Search articles by semantic similarity
+        - Analyze sentiment across multiple articles
+        - Compare articles and extract insights
+        - Find articles by specific entities or categories
+        - Extract summaries and key information
         
-        state["query_type"] = response
-        print(f"Query classified as: {query_type}")
-        return state
-    
-    def route_by_type(self, state: AgentState) -> str:
-        """Route to appropriate agent"""
-        return state["query_type"].type
-    
-
-    
-
-    
-
-    
-    def synthesize_answer(self, state: AgentState) -> AgentState:
-        """Synthesize final answer from agent results"""
-        # The last assistant message should contain the answer
-        for msg in reversed(state["messages"]):
-            if msg.type == "ai" and not hasattr(msg, 'tool'):
-                state["final_answer"] = msg.content
-                break
+        Use the available tools when you need to:
+        - Search for specific articles or topics
+        - Get detailed content from articles
+        - Perform sentiment analysis
+        - Compare multiple articles
+        - Find articles related to specific entities
+        - Get statistics about the article database
         
-        if not state["final_answer"]:
-            # Fallback synthesis
-            synthesis_prompt = f"""
-            Based on the conversation and analysis, provide a final answer to:
-            {state['current_query']}
-            
-            Context from tools and analysis:
-            {self._extract_tool_results(state)}
-            """
-            
-            response = self.llm.invoke([HumanMessage(content=synthesis_prompt)])
-            state["final_answer"] = response.content
+        Always provide helpful, accurate, and well-structured responses based on the retrieved information.
+        """)
         
-        # Note: LangGraph automatically persists state including conversation history
-        # No manual memory saving needed
+        # Combine system message with user messages
+        full_messages = [system_message] + messages
         
-        return state
+        # Call the LLM
+        response = self.llm.invoke(full_messages)
+        
+        # Print tool calls if any
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            print("\n🔧 Tools being used:")
+            for i, tool_call in enumerate(response.tool_calls, 1):
+                print(f"  {i}. {tool_call['name']} - {tool_call.get('args', {})}")
+            print()
+        
+        return {"messages": [response]}
     
-    
-    def _extract_tool_results(self, state: AgentState) -> str:
-        """Extract tool results from messages"""
-        results = []
-        for msg in state["messages"]:
-            if hasattr(msg, 'content') and msg.type == "tool":
-                results.append(msg.content)
-        return "\n".join(results[-3:]) if results else "No tool results"
-    
-    def process_query(self, query: str, conversation_history: List[BaseMessage] = None) -> Dict:
-        """Main entry point
+    def query(self, question: str, thread_id: str = "default") -> str:
+        """
+        Simple interface to query the article analysis system
         
         Args:
-            query: The user's query
-            conversation_history: Optional list of previous messages for conversation continuity
+            question: User's question about articles
+            thread_id: Conversation thread identifier
+            
+        Returns:
+            Agent's response
         """
-        # Build message history
-        messages = conversation_history or []
-        messages.append(HumanMessage(content=query))
+        config = {"configurable": {"thread_id": thread_id}}
         
-        initial_state = {
-            "messages": messages,
-            "query_type": None,
-            "current_query": query,
-            "final_answer": "",
-            "sources": []
-        }
+        # Execute the workflow
+        result = self.app.invoke(
+            {"messages": [HumanMessage(content=question)]},
+            config=config
+        )
         
-        # Run the graph
-        result = self.graph.invoke(initial_state)
+        # Return the final response
+        return result["messages"][-1].content
+    
+    def stream_query(self, question: str, thread_id: str = "default"):
+        """
+        Stream the response for real-time interaction
         
-        return {
-            "answer": result["final_answer"],
-            "sources": result.get("sources", []),
-            "query_type": result.get("query_type", "unknown"),
-            "conversation_messages": result.get("messages", [])  # Return full conversation for continuity
-        }
+        Args:
+            question: User's question
+            thread_id: Conversation thread identifier
+            
+        Yields:
+            Updates from each node in the graph
+        """
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        final_response = None
+        for chunk in self.app.stream(
+            {"messages": [HumanMessage(content=question)]},
+            config=config
+        ):
+            # Store the final response
+            if 'agent' in chunk and 'messages' in chunk['agent']:
+                final_response = chunk['agent']['messages'][-1].content
+            yield chunk
+        
+        return final_response
+    
+# Simple usage example
+def main():
+    """Example usage of the ArticleAnalysisAgent"""
+    
+    # Create the agent
+    agent = ArticleAnalysisAgent()
+    
+    # Example queries that match your use cases
+   
+    print("🤖 Article Analysis Agent Ready!")
+    print("=" * 50)
+    while True:
+        user_input = input("Enter your query (or 'exit' to quit): ")
+        if user_input.lower() == 'exit':
+            break
+        
+        print(f"🔍 Processing query: {user_input}")
+        
+        # Stream the response and collect the final answer
+        final_response = None
+        for chunk in agent.stream_query(user_input):
+            # The streaming shows tool executions in real-time
+            if 'agent' in chunk and 'messages' in chunk['agent']:
+                final_response = chunk['agent']['messages'][-1].content
+        
+        if final_response:
+            print(f"💬 Response: {final_response}")
+        else:
+            print("❌ No response received")
+        print("-" * 50)
 
 if __name__ == "__main__":
-    # Initialize
-    agent = ArticleAgent()
-    while True:
-        query = input("Enter your query (or 'exit' to quit): ")
-        if query.lower() == 'exit':
-            break
-
-        response = agent.process_query(query)
-        print("="*50)
-        print(response["answer"])
-        print("="*50)
+    main()
