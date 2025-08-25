@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Article Chat System</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-comments"></i>
+                    <h1>Article Chat</h1>
+                </div>
+                <div class="stats" id="stats">
+                    <div class="stat-item">
+                        <i class="fas fa-newspaper"></i>
+                        <span id="article-count">Loading...</span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-heartbeat"></i>
+                        <span id="health-status">Checking...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Chat Section -->
+            <section class="chat-section">
+                <div class="chat-header">
+                    <h2><i class="fas fa-robot"></i> Chat with Articles</h2>
+                    <p>Ask questions about the articles in our database</p>
+                </div>
+
+                <div class="chat-container" id="chat-container">
+                    <!-- Welcome Message -->
+                    <div class="message bot-message">
+                        <div class="message-avatar">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                Welcome! I can help you analyze and discuss the articles in our database. Try asking:
+                                <ul>
+                                    <li>"What are the main topics in the articles?"</li>
+                                    <li>"Summarize the AI-related articles"</li>
+                                    <li>"What's the sentiment about tech companies?"</li>
+                                    <li>"Compare articles about Meta and Intel"</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <input 
+                            type="text" 
+                            id="chat-input" 
+                            placeholder="Ask about the articles..." 
+                            maxlength="500"
+                        >
+                        <button id="send-button" class="send-button">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-footer">
+                        <span id="char-count">0/500</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Article Management Section -->
+            <section class="article-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-plus"></i> Add New Article</h2>
+                    <p>Expand the database with new articles</p>
+                </div>
+
+                <div class="article-form">
+                    <div class="input-group">
+                        <label for="article-url">Article URL:</label>
+                        <input 
+                            type="url" 
+                            id="article-url" 
+                            placeholder="https://example.com/article"
+                            class="url-input"
+                        >
+                    </div>
+                    <button id="add-article-button" class="add-button">
+                        <i class="fas fa-plus"></i>
+                        Add Article
+                    </button>
+                </div>
+
+                <div class="article-status" id="article-status"></div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loading-overlay">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Processing...</p>
+            </div>
+        </div>
+
+        <!-- Toast Container -->
+        <div class="toast-container" id="toast-container"></div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

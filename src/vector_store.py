@@ -7,23 +7,50 @@ from langchain.schema import Document
 from .models import Article
 from .logger import logger
 import json
+import chromadb
 
 class VectorStore:
-    def __init__(self, persist_directory: str = "./data/chroma_db", embedding_provider = None):
-        """Initialize ChromaDB with Google embeddings"""
+    def __init__(self, persist_directory: str = "./data/chroma_db", embedding_provider = None, chroma_host: str = None, chroma_port: int = 8000):
+        """Initialize ChromaDB with Google embeddings
+        
+        Args:
+            persist_directory: Local directory for ChromaDB (when running locally)
+            embedding_provider: Custom embedding provider (optional)
+            chroma_host: ChromaDB host (for remote ChromaDB service)
+            chroma_port: ChromaDB port (for remote ChromaDB service)
+        """
         self.embeddings = embedding_provider or GoogleGenerativeAIEmbeddings(
             model="gemini-embedding-exp-03-07",
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
         
-        self.persist_directory = persist_directory
+        # Check if we should use remote ChromaDB
+        chroma_host = chroma_host or os.getenv("CHROMA_HOST")
+        chroma_port = chroma_port or int(os.getenv("CHROMA_PORT", "8000"))
         
-        # Initialize or load existing collection
-        self.db = Chroma(
-            collection_name="articles",
-            embedding_function=self.embeddings,
-            persist_directory=persist_directory
-        )
+        if chroma_host:
+            # Use remote ChromaDB service
+            chroma_client = chromadb.HttpClient(
+                host=chroma_host,
+                port=chroma_port,
+                ssl=False
+            )
+            
+            self.db = Chroma(
+                collection_name="articles",
+                embedding_function=self.embeddings,
+                client=chroma_client
+            )
+            logger.info(f"Connected to remote ChromaDB at {chroma_host}:{chroma_port}")
+        else:
+            # Use local ChromaDB with persistence
+            self.persist_directory = persist_directory
+            self.db = Chroma(
+                collection_name="articles",
+                embedding_function=self.embeddings,
+                persist_directory=persist_directory
+            )
+            logger.info(f"Using local ChromaDB at {persist_directory}")
         
         logger.info(f"VectorStore initialized. Current articles: {self.db._collection.count()}")
     

@@ -28,12 +28,20 @@ class Article(BaseModel):
 class QueryRequest(BaseModel):
     """User query request"""
     query: str = Field(description="User's question or request")
+    max_articles: int = Field(default=5, description="Maximum number of articles to consider")
+
+
+class ArticleSource(BaseModel):
+    """Article source information with relevance scoring"""
+    title: str = Field(description="Article title")
+    url: str = Field(description="Article URL")
+    relevance_score: float = Field(description="Relevance score", ge=0, le=1)
 
 
 class QueryResponse(BaseModel):
-    """Response to user query"""
-    answer: str = Field(description="AI agent's response")
-    sources: List[str] = Field(default_factory=list, description="URLs of articles used in response")
+    """Standard API response to user queries"""
+    response: str = Field(description="AI agent's response text")
+    sources: List[ArticleSource] = Field(default_factory=list, description="Relevant article sources")
     confidence: float = Field(default=1.0, description="Confidence score", ge=0, le=1)
     tools_used: List[str] = Field(default_factory=list, description="Tools used by agent")
 
