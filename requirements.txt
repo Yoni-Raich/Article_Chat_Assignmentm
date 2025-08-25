@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+langchain
+langchain-google-genai
+langgraph
+langchain-chroma
+chromadb
+requests
+beautifulsoup4
+python-dotenv
+pydantic
+tqdm
