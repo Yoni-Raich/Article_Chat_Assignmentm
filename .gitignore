@@ -1,7 +1,7 @@
 # Current files to ignore
 Article_Chat_Assignmentm.md
 my_notes.md
-
+testing.py
 # Common files to ignore
 *.log
 *.tmp
@@ -11,7 +11,10 @@ node_modules/
 .env
 .env.local
 .vscode/
+.venv/
 .idea/
 *.swp
 *.swo
 *~
+/data
+/data
