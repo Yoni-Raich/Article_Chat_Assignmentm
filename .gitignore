@@ -2,6 +2,8 @@
 Article_Chat_Assignmentm.md
 my_notes.md
 testing.py
+tasks.md
+workflow_graph.png
 # Common files to ignore
 *.log
 *.tmp
@@ -19,3 +21,4 @@ node_modules/
 /data
 /data
 .github/copilot-instructions.md
+.github/instructions/tasks.instructions.md
