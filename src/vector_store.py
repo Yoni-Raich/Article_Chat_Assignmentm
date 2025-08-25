@@ -43,7 +43,7 @@ class VectorStore:
             chroma_port: ChromaDB port (for remote ChromaDB service)
         """
         self.embeddings = embedding_provider or GoogleGenerativeAIEmbeddings(
-            model="gemini-embedding-exp-03-07",
+            model=os.getenv("EMBEDDING_MODEL_NAME", "gemini-embedding-exp-03-07"),
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
 

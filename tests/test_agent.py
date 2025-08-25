@@ -19,7 +19,7 @@ def test_agent_basic_functionality():
     init_tools()
     tools = get_list_of_tools()
 
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash"))
 
     pre_built_agent = create_react_agent(
         llm,

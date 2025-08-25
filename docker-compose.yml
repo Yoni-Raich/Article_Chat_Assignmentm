@@ -25,6 +25,7 @@ services:
       - CHROMA_PORT=8000
     volumes:
       - ./data:/app/data
+      - chroma_data:/app/chroma_data  # Share chroma data with main app
     depends_on:
       - chroma-db
     restart: unless-stopped

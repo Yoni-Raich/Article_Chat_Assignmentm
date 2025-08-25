@@ -31,12 +31,51 @@ from src.models import QueryRequest, QueryResponse, IngestRequest, IngestRespons
 from src.ingestion import ArticleProcessor
 from src.vector_store import VectorStore
 from src.cache import QueryCache
+from scripts.initialize_articles import ArticleInitializer, ARTICLE_URLS
 
 # Global instances
 agent: Optional[ArticleAnalysisAgent] = None
 article_processor: Optional[ArticleProcessor] = None
 vector_store: Optional[VectorStore] = None
 query_cache: Optional[QueryCache] = None
+
+
+async def initialize_articles_if_needed():
+    """
+    Initialize articles in the database if it's empty or has very few articles.
+    This ensures the system has content to work with on startup.
+    """
+    global vector_store
+    
+    if not vector_store:
+        print("❌ Vector store not initialized")
+        return
+    
+    # Check current article count
+    current_count = len(vector_store.get_all_articles())
+    expected_count = len(ARTICLE_URLS)
+    
+    print(f"📊 Current articles: {current_count}, Expected: {expected_count}")
+    
+    # If we have less than 80% of expected articles, initialize
+    if current_count < (expected_count * 0.8):
+        print(f"📥 Initializing article database ({current_count}/{expected_count} articles found)...")
+        
+        try:
+            # Initialize articles using the existing initializer
+            initializer = ArticleInitializer(max_workers=2, retry_attempts=1)
+            summary = initializer.initialize_all_articles(ARTICLE_URLS)
+            
+            print(f"✅ Article initialization complete!")
+            print(f"   📊 Successful: {summary['successful']}")
+            print(f"   ❌ Failed: {summary['failed']}")
+            print(f"   ⏭️  Skipped: {summary['skipped']}")
+            
+        except Exception as e:
+            print(f"❌ Failed to initialize articles: {e}")
+            # Don't fail the startup, just log the error
+    else:
+        print(f"✅ Article database already populated ({current_count} articles)")
 
 
 @asynccontextmanager
@@ -63,6 +102,10 @@ async def lifespan(app: FastAPI):
 
         print("🔧 Initializing AI agent...")
         agent = ArticleAnalysisAgent()
+
+        # Auto-initialize articles if needed
+        print("🔧 Checking article database...")
+        await initialize_articles_if_needed()
 
         print("✅ All components initialized successfully!")
 

@@ -44,7 +44,7 @@ class ArticleAnalysisAgent:
 
         # Initialize LLM with tools
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0.1
         ).bind_tools(self.tools)

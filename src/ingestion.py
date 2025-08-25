@@ -28,7 +28,7 @@ class ArticleProcessor:
     """
     def __init__(self, llm_provider = None):
         self.llm = llm_provider or ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash"),
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
 
