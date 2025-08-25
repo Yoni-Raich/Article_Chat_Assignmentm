@@ -1,7 +1,7 @@
 from langchain.tools import tool
 from typing import List, Dict, Optional
-from vector_store import VectorStore
-from ingestion import ArticleProcessor
+from .vector_store import VectorStore
+from .ingestion import ArticleProcessor
 
 # Initialize global instances
 vector_store = None

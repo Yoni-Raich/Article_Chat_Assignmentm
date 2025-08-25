@@ -5,8 +5,8 @@ from typing import Dict, List
 import json
 import os
 from datetime import datetime
-from models import Article, ArticleMetadata
-from logger import logger
+from .models import Article, ArticleMetadata
+from .logger import logger
 
 class ArticleProcessor:
     def __init__(self, llm_provider = None):

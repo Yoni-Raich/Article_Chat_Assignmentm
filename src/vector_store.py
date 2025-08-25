@@ -4,8 +4,8 @@ from typing import List, Dict, Optional
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.schema import Document
-from models import Article
-from logger import logger
+from .models import Article
+from .logger import logger
 import json
 
 class VectorStore:
