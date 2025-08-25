@@ -17,9 +17,10 @@ def create_multi_agent(llm: ChatGoogleGenerativeAI, tools: List = None):
             model=llm,
             tools=tools,
             prompt=SystemMessage(content="""
-            You are comparing and analyzing multiple articles.
-            Use search_articles to find relevant content, then use compare_articles or analyze_sentiment_batch.
-            Focus on patterns, differences, and insights across articles.
+            You are an expert at answering questions that require retrieving and analyzing information from multiple articles.
+            Use search_articles to find relevant content across the knowledge base, then analyze the information to provide comprehensive answers.
+            You can compare articles when needed using compare_articles, analyze sentiment patterns with analyze_sentiment_batch, or find similar content.
+            Focus on synthesizing information from multiple sources to provide thorough, well-researched responses.
             """)
         )
         

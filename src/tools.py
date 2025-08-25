@@ -21,7 +21,12 @@ def get_list_of_tools():
         analyze_sentiment_batch,
         get_articles_by_category,
         compare_articles,
-        find_most_similar_article
+        find_most_similar_article,
+        get_most_common_entities,
+        get_entities_by_type,
+        analyze_entity_sentiment,
+        find_articles_by_entity,
+        get_all_articles
 ]
 
 @tool
@@ -279,6 +284,228 @@ def find_most_similar_article(text: str, similarity_threshold: float = 0.5) -> O
         }
     else:
         return None
+
+
+@tool
+def get_most_common_entities(entity_type: str = "all", top_n: int = 10) -> Dict:
+    """
+    Get the most commonly discussed entities across all articles.
+    
+    Args:
+        entity_type: Type of entities to filter by ("all", "people", "organizations", "locations", "products")
+        top_n: Number of top entities to return (default: 10)
+    
+    Returns:
+        Dict with most common entities and their counts
+    """
+    if not vector_store:
+        return {"error": "Vector store not initialized"}
+    
+    articles = vector_store.get_all_articles()
+    
+    if not articles:
+        return {"total_articles": 0, "entities": []}
+    
+    # Collect all entities
+    entity_counts = {}
+    
+    for article in articles:
+        entities = article.get("entities", [])
+        for entity in entities:
+            entity_lower = entity.lower()
+            # Basic entity type filtering
+            if entity_type != "all":
+                # Simple heuristics for entity classification
+                if entity_type == "people" and not any(word in entity_lower for word in ["corp", "inc", "ltd", "company", "tech", "city", "country", "state"]):
+                    pass  # Likely a person
+                elif entity_type == "organizations" and any(word in entity_lower for word in ["corp", "inc", "ltd", "company", "tech"]):
+                    pass  # Likely an organization
+                elif entity_type == "locations" and any(word in entity_lower for word in ["city", "country", "state", "county"]):
+                    pass  # Likely a location
+                elif entity_type == "products" and not any(word in entity_lower for word in ["corp", "inc", "ltd", "city", "country", "state"]):
+                    pass  # Likely a product
+                else:
+                    continue  # Skip this entity if it doesn't match the filter
+            
+            entity_counts[entity] = entity_counts.get(entity, 0) + 1
+    
+    # Sort by count and get top N
+    sorted_entities = sorted(entity_counts.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    
+    return {
+        "total_articles": len(articles),
+        "entity_type": entity_type,
+        "most_common_entities": [
+            {"entity": entity, "count": count, "percentage": round(count/len(articles)*100, 1)} 
+            for entity, count in sorted_entities
+        ]
+    }
+
+
+@tool
+def get_entities_by_type(entity_name: str) -> Dict:
+    """
+    Get articles that mention a specific entity.
+    
+    Args:
+        entity_name: Name of the entity to search for
+    
+    Returns:
+        Dict with articles mentioning the entity and analysis
+    """
+    if not vector_store:
+        return {"error": "Vector store not initialized"}
+    
+    articles = vector_store.get_all_articles()
+    matching_articles = []
+    
+    for article in articles:
+        entities = article.get("entities", [])
+        # Case-insensitive matching
+        if any(entity_name.lower() in entity.lower() for entity in entities):
+            matching_articles.append({
+                "title": article["title"],
+                "url": article["url"],
+                "summary": article["summary"],
+                "category": article["category"],
+                "sentiment": article["sentiment"],
+                "entities": entities
+            })
+    
+    if not matching_articles:
+        return {"entity": entity_name, "found": False, "articles": []}
+    
+    # Calculate average sentiment
+    sentiments = [art["sentiment"] for art in matching_articles]
+    avg_sentiment = sum(sentiments) / len(sentiments)
+    
+    return {
+        "entity": entity_name,
+        "found": True,
+        "total_mentions": len(matching_articles),
+        "average_sentiment": avg_sentiment,
+        "sentiment_interpretation": "positive" if avg_sentiment > 0.2 else "negative" if avg_sentiment < -0.2 else "neutral",
+        "articles": matching_articles
+    }
+
+
+@tool
+def analyze_entity_sentiment(entity_name: str) -> Dict:
+    """
+    Analyze sentiment of articles mentioning a specific entity.
+    
+    Args:
+        entity_name: Name of the entity to analyze sentiment for
+    
+    Returns:
+        Dict with sentiment analysis for the entity
+    """
+    if not vector_store:
+        return {"error": "Vector store not initialized"}
+    
+    # Get articles mentioning this entity
+    entity_data = get_entities_by_type.invoke({"entity_name": entity_name})
+    
+    if not entity_data.get("found", False):
+        return {"entity": entity_name, "error": "Entity not found in any articles"}
+    
+    articles = entity_data["articles"]
+    sentiments = [art["sentiment"] for art in articles]
+    
+    # Categorize sentiments
+    positive = [s for s in sentiments if s > 0.2]
+    negative = [s for s in sentiments if s < -0.2]
+    neutral = [s for s in sentiments if -0.2 <= s <= 0.2]
+    
+    return {
+        "entity": entity_name,
+        "total_articles": len(articles),
+        "average_sentiment": entity_data["average_sentiment"],
+        "sentiment_breakdown": {
+            "positive_articles": len(positive),
+            "negative_articles": len(negative),
+            "neutral_articles": len(neutral)
+        },
+        "sentiment_interpretation": entity_data["sentiment_interpretation"],
+        "sentiment_range": {
+            "highest": max(sentiments) if sentiments else 0,
+            "lowest": min(sentiments) if sentiments else 0
+        }
+    }
+
+
+@tool
+def find_articles_by_entity(entity_name: str, max_results: int = 5) -> List[Dict]:
+    """
+    Find articles that mention a specific entity.
+    
+    Args:
+        entity_name: Name of the entity to search for
+        max_results: Maximum number of articles to return
+    
+    Returns:
+        List of articles mentioning the entity
+    """
+    if not vector_store:
+        return []
+    
+    entity_data = get_entities_by_type.invoke({"entity_name": entity_name})
+    
+    if not entity_data.get("found", False):
+        return []
+    
+    # Return up to max_results articles
+    articles = entity_data["articles"][:max_results]
+    
+    # Simplify the output for the agent
+    simplified = []
+    for article in articles:
+        simplified.append({
+            "title": article["title"],
+            "url": article["url"],
+            "summary": article["summary"],
+            "category": article["category"],
+            "sentiment": article["sentiment"]
+        })
+    
+    return simplified
+
+
+@tool
+def get_all_articles(field: str = "title") -> List[str]:
+    """
+    Get a list of all articles in the database. 
+    When user asks to "list all articles" or similar, use this tool without specifying the field parameter (it will default to titles).
+    Only specify the field parameter if the user explicitly asks for URLs.
+    
+    Args:
+        field: Article field to retrieve (default: "title")
+               Valid fields: "title", "url"
+    
+    Returns:
+        List of all field values from all articles in the database
+    """
+    if not vector_store:
+        return []
+    
+    articles = vector_store.get_all_articles()
+    
+    if not articles:
+        return []
+    
+    # Valid fields that can be extracted
+    valid_fields = ["title", "url"]
+    
+    if field not in valid_fields:
+        return [f"Invalid field '{field}'. Valid fields are: {', '.join(valid_fields)}"]
+    
+    field_values = []
+    for article in articles:
+        value = article.get(field)
+        if value is not None:
+            field_values.append(str(value))
+    
+    return field_values
 
 
 if __name__ == "__main__":

@@ -15,14 +15,19 @@ from tools import (
     compare_articles,
     get_all_articles_summary,
     find_most_similar_article,
-    fetch_article_by_url
+    fetch_article_by_url,
+    get_most_common_entities,
+    get_entities_by_type,
+    analyze_entity_sentiment,
+    find_articles_by_entity,
+    get_all_articles
 )
 from agents import create_single_agent, create_multi_agent, create_all_agent
 
 class ArticleAgent:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             google_api_key=os.getenv("GOOGLE_API_KEY"),
             temperature=0.3
         )
@@ -33,8 +38,9 @@ class ArticleAgent:
         # Tools for different query types
         init_tools()
         self.single_tools = [find_most_similar_article, fetch_article_by_url]
-        self.multi_tools = [search_articles, compare_articles, analyze_sentiment_batch, find_most_similar_article]
-        self.all_tools = [get_all_articles_summary, get_articles_by_category, search_articles, find_most_similar_article]
+        self.multi_tools = [get_all_articles, search_articles, compare_articles, analyze_sentiment_batch, find_most_similar_article]
+        self.all_tools = [get_all_articles_summary, get_articles_by_category, search_articles, find_most_similar_article, 
+                         get_most_common_entities, get_entities_by_type, analyze_entity_sentiment, find_articles_by_entity, get_all_articles]
         
         # Build the main graph
         self.graph = self._build_graph()
@@ -206,7 +212,12 @@ class ArticleAgent:
 if __name__ == "__main__":
     # Initialize
     agent = ArticleAgent()
-    query = "What are the most commonly discussed entities across the articles?"
-    response = agent.process_query(query)
-    print("="*50)
-    print(response["answer"])
+    while True:
+        query = input("Enter your query (or 'exit' to quit): ")
+        if query.lower() == 'exit':
+            break
+
+        response = agent.process_query(query)
+        print("="*50)
+        print(response["answer"])
+        print("="*50)

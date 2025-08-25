@@ -48,8 +48,16 @@ class ArticleProcessor:
         Analyze this article and return JSON with:
         1. summary: 2-3 sentence summary
         2. keywords: list of 5-7 key topics
-        3. sentiment: float between -1 (negative) and 1 (positive)
-        4. category: one of [technology, business, politics, other]
+        3. entities: list of 5-10 important named entities (people, organizations, locations, products, brands, etc.)
+        4. sentiment: float between -1 (negative) and 1 (positive)
+        5. category: one of [technology, business, politics, other]
+        
+        For entities, extract proper nouns like:
+        - People: CEO names, politicians, celebrities, experts quoted
+        - Organizations: companies, government agencies, nonprofits
+        - Locations: countries, cities, regions mentioned
+        - Products: software, devices, services, brands
+        - Events: conferences, incidents, campaigns
         
         Article Title: {title}
         Content: {content}
@@ -61,11 +69,13 @@ class ArticleProcessor:
             # Invoke the structured LLM
             metadata = structured_llm.invoke(prompt)
             return metadata.model_dump()
-        except:
+        except Exception as e:
+            logger.warning(f"LLM extraction failed: {e}, using fallback")
             # Fallback if LLM fails
             return {
                 "summary": title,
                 "keywords": ["article"],
+                "entities": [],
                 "sentiment": 0.0,
                 "category": "other"
             }
@@ -86,6 +96,7 @@ class ArticleProcessor:
         metadata = ArticleMetadata(
             summary=metadata_dict.get("summary", title),
             keywords=metadata_dict.get("keywords", []),
+            entities=metadata_dict.get("entities", []),
             sentiment=metadata_dict.get("sentiment", 0.0),
             category=metadata_dict.get("category", "other")
         )

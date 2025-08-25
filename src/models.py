@@ -10,6 +10,7 @@ class ArticleMetadata(BaseModel):
     """Structured metadata for LLM extraction"""
     summary: str = Field(description="2-3 sentence summary of the article")
     keywords: List[str] = Field(description="5-7 key topics from the article")
+    entities: List[str] = Field(description="5-10 important named entities (people, organizations, locations, products)", default_factory=list)
     sentiment: float = Field(description="Sentiment score between -1 (negative) and 1 (positive)", ge=-1, le=1)
     category: str = Field(description="Article category")
 
