@@ -59,7 +59,7 @@ class ArticleProcessor:
 
     def process_with_llm(self, title: str, content: str) -> Dict:
         """Extract metadata using LLM"""
-         # Configure the LLM with structured output using Pydantic model
+         # Configure the LLM with structured output using the Pydantic model
         structured_llm = self.llm.with_structured_output(ArticleMetadata)
         prompt = f"""
         Analyze this article and return JSON with:

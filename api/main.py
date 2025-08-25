@@ -227,9 +227,6 @@ async def chat(request: QueryRequest):
             else:
                 print(f"🔍 Cache MISS for query: '{request.query[:50]}...'")
 
-        # Clear previous tools used (for new query)
-        agent.used_tools = []
-
         # Get response from agent (cache miss or no cache)
         answer = agent.query(request.query)
 

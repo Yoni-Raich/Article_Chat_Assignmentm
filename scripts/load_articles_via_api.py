@@ -5,6 +5,7 @@ This ensures articles are loaded into the same database that the Docker containe
 """
 
 # Standard library imports
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,7 +35,11 @@ ARTICLE_URLS = [
     "https://edition.cnn.com/2025/07/24/tech/intel-layoffs-15-percent-q2-earnings"
 ]
 
-API_BASE = "http://localhost:8000"
+# Allow API base URL to be set via command line argument or environment variable
+if len(sys.argv) > 1:
+    API_BASE = sys.argv[1]
+else:
+    API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 def check_server_status():
     """Check if the API server is running"""
