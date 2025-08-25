@@ -19,7 +19,12 @@ The system implements an **LLM Agent-based architecture** designed to answer que
      - Analyzes what tools are needed
      - Uses relevant tools iteratively
      - Continues until it has sufficient information to provide a complete answer
-   - Agent workflow visualization available at: `workflow_graph.png`
+
+   **Agent Workflow Visualization:**
+   
+   ![Agent Workflow Graph](workflow_graph.png)
+   
+   The graph above shows the complete agent decision flow from initial query to final response.
 
 3. **Tool-based Database Interaction**
    - Large toolkit that communicates with ChromaDB for semantic search
