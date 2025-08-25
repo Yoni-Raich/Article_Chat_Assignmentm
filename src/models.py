@@ -27,25 +27,40 @@ class Article(BaseModel):
 
 class QueryRequest(BaseModel):
     """User query request"""
-    query: str
+    query: str = Field(description="User's question or request")
 
-class QueryType(BaseModel):
-    """Query type classification for routing"""
-    type: str = Field(description="Query type: 'single', 'multi', or 'all'")
-    confidence: float = Field(description="Confidence score for classification", ge=0, le=1, default=1.0)
-    reasoning: str = Field(description="Brief explanation for the classification", default="")
 
 class QueryResponse(BaseModel):
     """Response to user query"""
-    answer: str
-    sources: List[str] = []
-    confidence: float = 1.0
+    answer: str = Field(description="AI agent's response")
+    sources: List[str] = Field(default_factory=list, description="URLs of articles used in response")
+    confidence: float = Field(default=1.0, description="Confidence score", ge=0, le=1)
+    tools_used: List[str] = Field(default_factory=list, description="Tools used by agent")
+
+
+class IngestRequest(BaseModel):
+    """Article ingestion request"""
+    url: str = Field(description="URL of article to ingest")
+
+
+class IngestResponse(BaseModel):
+    """Article ingestion response"""
+    success: bool = Field(description="Whether ingestion was successful")
+    message: str = Field(description="Status message")
+    article_id: Optional[str] = Field(default=None, description="ID of ingested article")
+    title: Optional[str] = Field(default=None, description="Title of ingested article")
+
+
+class ErrorResponse(BaseModel):
+    """Error response model"""
+    error: str = Field(description="Error type")
+    message: str = Field(description="Error message")
+    detail: Optional[str] = Field(default=None, description="Additional error details")
 
 
 # State definition with message history for LangGraph
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
-    query_type: QueryType
     current_query: str
     final_answer: str
     sources: List[str]
