@@ -18,3 +18,4 @@ node_modules/
 *~
 /data
 /data
+.github/copilot-instructions.md
