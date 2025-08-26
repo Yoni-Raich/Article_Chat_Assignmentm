@@ -64,7 +64,7 @@ User Query → ReAct Agent → Tools Selection → Database Search → AI Respon
 1. **Clone and navigate to the project**
    ```bash
    git clone https://github.com/Yoni-Raich/Article_Chat_Assignmentm.git
-   cd Article_Chat_Assignment
+   cd Article_Chat_Assignmentm
    ```
 
 2. **Set your Google API key**
