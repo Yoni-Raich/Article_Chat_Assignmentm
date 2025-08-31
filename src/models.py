@@ -41,6 +41,15 @@ class Article(BaseModel):
     entities: List[str] = Field(default_factory=list)
     processed_at: datetime = Field(default_factory=datetime.now)
 
+
+class Chunk(BaseModel):
+    """Data model for an article content chunk"""
+    id: str
+    article_id: str
+    content: str
+    index: int
+
+
 class QueryRequest(BaseModel):
     """User query request"""
     query: str = Field(description="User's question or request")

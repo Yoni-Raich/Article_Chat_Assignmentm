@@ -117,32 +117,33 @@ class ArticleInitializer:
             try:
                 logger.info(f"📄 Processing: {url} (attempt {attempt + 1})")
 
-                # Process the article
-                article = self.processor.process_url(url)
+                # Process the article to get article object and chunks
+                article, chunks = self.processor.process_url(url)
 
-                if not article:
+                if not article or not chunks:
                     return {
                         "url": url,
                         "success": False,
-                        "error": "Failed to fetch or process article",
+                        "error": "Failed to fetch, process, or chunk article",
                         "attempts": attempt + 1
                     }
 
-                # Add to vector store
-                success = self.vector_store.add_article(article)
+                # Add article and its chunks to the vector store
+                success = self.vector_store.add_article_and_chunks(article, chunks)
 
                 if success:
                     return {
                         "url": url,
                         "success": True,
                         "title": article.title,
+                        "chunks_created": len(chunks),
                         "attempts": attempt + 1
                     }
                 else:
                     return {
                         "url": url,
                         "success": False,
-                        "error": "Failed to add to vector store",
+                        "error": "Failed to add article and chunks to vector store",
                         "attempts": attempt + 1
                     }
 

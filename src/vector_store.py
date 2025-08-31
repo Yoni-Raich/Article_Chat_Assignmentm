@@ -17,7 +17,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.schema import Document
 
 # Local imports
-from .models import Article
+from .models import Article, Chunk
 from .logger import logger
 
 class VectorStore:
@@ -80,23 +80,18 @@ class VectorStore:
             self.db._collection.count()
         )
 
-    def add_article(self, article: Article) -> bool:
-        """Add single article to vector store"""
+    def add_article_and_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
+        """Add a parent article and its content chunks to the vector store."""
         try:
-            # Create embedding text from title + summary + keywords
-            embedding_text = (
-                f"{article.title} {article.metadata.summary} "
-                f"{' '.join(article.metadata.keywords)}"
-            )
-
-            # Create document with full metadata
-            doc = Document(
-                page_content=embedding_text,
+            # 1. Create and store the parent article document (without embedding content)
+            article_doc = Document(
+                page_content=f"Article: {article.title}", # Minimal content
                 metadata={
+                    "doc_type": "article",
                     "id": article.id,
                     "url": article.url,
                     "title": article.title,
-                    "full_content": article.content,  # Store full text!
+                    "full_content": article.content,
                     "summary": article.metadata.summary,
                     "keywords": json.dumps(article.metadata.keywords),
                     "entities": json.dumps(article.metadata.entities),
@@ -105,52 +100,70 @@ class VectorStore:
                     "processed_at": str(article.processed_at)
                 }
             )
+            self.db.add_documents([article_doc], ids=[article.id])
+            logger.info("Stored parent article: %s", article.title)
 
-            # Add to ChromaDB
-            self.db.add_documents([doc], ids=[article.id])
-            logger.info("Added article: %s...", article.title[:50])
+            # 2. Create and store documents for each chunk (with embedding)
+            chunk_docs = []
+            for chunk in chunks:
+                chunk_doc = Document(
+                    page_content=chunk.content, # This is what gets embedded
+                    metadata={
+                        "doc_type": "chunk",
+                        "chunk_id": chunk.id,
+                        "article_id": chunk.article_id,
+                        "chunk_index": chunk.index,
+                        "title": article.title,
+                        "url": article.url,
+                    }
+                )
+                chunk_docs.append(chunk_doc)
+
+            if chunk_docs:
+                self.db.add_documents(chunk_docs, ids=[c.metadata['chunk_id'] for c in chunk_docs])
+                logger.info("Stored %d chunks for article: %s", len(chunk_docs), article.title)
+
             return True
 
         except Exception as e:
-            logger.error("Error adding article %s: %s", article.id, e)
+            logger.error("Error adding article and chunks for %s: %s", article.id, e)
             return False
 
-    def add_batch(self, articles: List[Article]) -> int:
-        """Add multiple articles"""
-        added = 0
-        for article in articles:
-            if self.add_article(article):
-                added += 1
+    def add_batch(self, processed_data: List[tuple[Article, List[Chunk]]]) -> int:
+        """Add multiple articles and their chunks."""
+        added_count = 0
+        for article, chunks in processed_data:
+            if self.add_article_and_chunks(article, chunks):
+                added_count += 1
+        logger.info("Successfully added %d articles and their chunks.", added_count)
+        return added_count
 
-        logger.info("Added %s/%s articles to vector store", added, len(articles))
-        return added
-
-    def search(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
-        """Search for relevant articles"""
+    def search_chunks(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
+        """Search for relevant article chunks."""
         try:
-            # Perform similarity search
+            # Add doc_type filter to existing filters
+            search_filter = {"doc_type": "chunk"}
+            if filter_dict:
+                search_filter.update(filter_dict)
+
+            # Perform similarity search on chunks
             results = self.db.similarity_search_with_score(
                 query=query,
                 k=k,
-                filter=filter_dict
+                filter=search_filter
             )
 
-            # Format results
+            # Format results from chunk metadata
             formatted_results = []
             for doc, score in results:
                 formatted_results.append({
-                    "id": doc.metadata.get("id"),
-                    "url": doc.metadata.get("url"),
+                    "chunk_id": doc.metadata.get("chunk_id"),
+                    "article_id": doc.metadata.get("article_id"),
+                    "content": doc.page_content,
                     "title": doc.metadata.get("title"),
-                    "summary": doc.metadata.get("summary"),
-                    "full_content": doc.metadata.get("full_content"),
-                    "keywords": json.loads(doc.metadata.get("keywords", "[]")),
-                    "entities": json.loads(doc.metadata.get("entities", "[]")),
-                    "sentiment": doc.metadata.get("sentiment"),
-                    "category": doc.metadata.get("category"),
+                    "url": doc.metadata.get("url"),
                     "similarity_score": 1 - score  # Convert distance to similarity
                 })
-
             return formatted_results
 
         except Exception as e:
@@ -159,9 +172,10 @@ class VectorStore:
 
     def get_by_id(self, article_id: str) -> Optional[Dict]:
         """Get specific article by ID"""
-        results = self.db.get(ids=[article_id])
+        results = self.db.get(ids=[article_id], where={"doc_type": "article"})
         if results and results['documents']:
             metadata = results['metadatas'][0]
+            # Reconstruct the article dictionary from metadata
             return {
                 "id": metadata.get("id"),
                 "url": metadata.get("url"),
@@ -177,7 +191,7 @@ class VectorStore:
 
     def get_all_articles(self) -> List[Dict]:
         """Get all articles metadata (without full content for efficiency)"""
-        results = self.db.get()
+        results = self.db.get(where={"doc_type": "article"})
         articles = []
 
         if results and results['metadatas']:
@@ -191,18 +205,43 @@ class VectorStore:
                     "sentiment": metadata.get("sentiment"),
                     "entities": json.loads(metadata.get("entities", "[]"))
                 })
-
         return articles
 
     def article_exists(self, article_id: str) -> bool:
-        """Check if article already exists"""
-        result = self.db.get(ids=[article_id])
-        return bool(result and result['documents'])
+        """Check if an article (not a chunk) already exists."""
+        result = self.db.get(ids=[article_id], where={"doc_type": "article"})
+        return bool(result and result['ids'])
+
+    def get_chunks_by_article_id(self, article_id: str) -> List[Dict]:
+        """Get all chunks for a specific article."""
+        results = self.db.get(where={"doc_type": "chunk", "article_id": article_id})
+        chunks = []
+        if results and results['documents']:
+            for i, content in enumerate(results['documents']):
+                metadata = results['metadatas'][i]
+                chunks.append({
+                    "chunk_id": metadata.get("chunk_id"),
+                    "article_id": metadata.get("article_id"),
+                    "content": content,
+                    "index": metadata.get("chunk_index"),
+                })
+        # Sort chunks by index
+        chunks.sort(key=lambda x: x.get('index', 0))
+        return chunks
 
     def delete_article(self, article_id: str) -> bool:
         """Delete article from store"""
         try:
-            self.db.delete(ids=[article_id])
+            # First, get all chunk IDs for the article
+            chunk_ids_to_delete = [
+                c['chunk_id'] for c in self.get_chunks_by_article_id(article_id)
+            ]
+            # Also delete the article document itself
+            ids_to_delete = [article_id] + chunk_ids_to_delete
+            if ids_to_delete:
+                self.db.delete(ids=ids_to_delete)
+                logger.info("Deleted article %s and its %d chunks.", article_id, len(chunk_ids_to_delete))
             return True
-        except:
+        except Exception as e:
+            logger.error("Error deleting article %s: %s", article_id, e)
             return False
