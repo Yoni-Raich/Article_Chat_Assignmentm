@@ -10,6 +10,7 @@ This module provides REST API endpoints for:
 # Standard library imports
 import os
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime
@@ -207,7 +208,8 @@ async def chat(request: QueryRequest):
     This endpoint processes user questions about articles using the AI agent
     with access to the vector database and various analysis tools.
 
-    Features automatic caching of responses for repeated queries.
+    Features automatic caching of responses for repeated queries and session-based
+    conversation continuity for multiple users.
     """
     global agent, vector_store, query_cache
 
@@ -218,20 +220,24 @@ async def chat(request: QueryRequest):
         )
 
     try:
-        # Check cache first for repeated queries
+        # Generate or use provided session ID for conversation continuity
+        session_id = request.session_id or str(uuid.uuid4())
+        print(f"🔗 Processing query for session: {session_id[:8]}...")
+
+        # Check cache first for repeated queries (include session for cache key)
+        cache_key = f"{session_id}:{request.query}"
         if query_cache:
-            cached_response = query_cache.get(request.query, request.max_articles)
+            cached_response = query_cache.get(cache_key, request.max_articles)
             if cached_response:
-                print(f"🚀 Cache HIT for query: '{request.query[:50]}...'")
+                print(f"🚀 Cache HIT for session {session_id[:8]}: '{request.query[:50]}...'")
+                # Ensure session_id is in cached response
+                cached_response["session_id"] = session_id
                 return QueryResponse(**cached_response)
             else:
-                print(f"🔍 Cache MISS for query: '{request.query[:50]}...'")
+                print(f"🔍 Cache MISS for session {session_id[:8]}: '{request.query[:50]}...'")
 
-        # Get response from agent (cache miss or no cache)
-        answer = agent.query(request.query)
-
-        # Get tools used in the query
-        tools_used = agent.get_used_tools()
+        # Get response from agent with session-specific thread ID
+        answer = agent.query(request.query, thread_id=session_id)
 
         # Get sources from vector store with similarity search
         sources = []
@@ -252,13 +258,14 @@ async def chat(request: QueryRequest):
             "response": answer,
             "sources": [source.dict() for source in sources],
             "confidence": 1.0,
-            "tools_used": tools_used
+            "tools_used": [],  # Will be populated by agent if needed
+            "session_id": session_id
         }
 
         # Cache the response for future identical queries
         if query_cache:
-            query_cache.set(request.query, response_data, request.max_articles)
-            print(f"💾 Response cached for query: '{request.query[:50]}...'")
+            query_cache.set(cache_key, response_data, request.max_articles)
+            print(f"💾 Response cached for session {session_id[:8]}: '{request.query[:50]}...'")
 
         return QueryResponse(**response_data)
 

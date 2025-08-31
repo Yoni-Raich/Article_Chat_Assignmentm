@@ -54,6 +54,7 @@ class QueryRequest(BaseModel):
     """User query request"""
     query: str = Field(description="User's question or request")
     max_articles: int = Field(default=5, description="Maximum number of articles to consider")
+    session_id: Optional[str] = Field(default=None, description="Optional session ID for conversation continuity")
 
 
 class ArticleSource(BaseModel):
@@ -72,6 +73,7 @@ class QueryResponse(BaseModel):
     )
     confidence: float = Field(default=1.0, description="Confidence score", ge=0, le=1)
     tools_used: List[str] = Field(default_factory=list, description="Tools used by agent")
+    session_id: str = Field(description="Session ID used for this conversation")
 
 
 class IngestRequest(BaseModel):

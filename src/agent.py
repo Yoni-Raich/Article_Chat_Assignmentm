@@ -1,7 +1,10 @@
 """
-Minimal Article Analysis Agent using create_react_agent.
-No status callbacks - just the essential functionality.
+Article Analysis Agent module using LangGraph and Google Generative AI.
+
+This module provides an AI agent capable of analyzing articles using various tools
+for content processing, sentiment analysis, and question answering.
 """
+
 
 import os
 import asyncio
@@ -15,9 +18,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from .tools import init_tools, get_list_of_tools
 from .logger import logger
 
-class MinimalArticleAnalysisAgent:
+class ArticleAnalysisAgent:
     """
-    Minimal LangGraph agent - no status callbacks, just core functionality
+    Elegant LangGraph agent for article analysis with VectorDB integration
     """
 
     def __init__(self):
@@ -29,7 +32,7 @@ class MinimalArticleAnalysisAgent:
         self.llm = ChatGoogleGenerativeAI(
             model=os.getenv("LLM_MODEL_NAME", "gemini-2.5-flash"),
             google_api_key=os.getenv("GOOGLE_API_KEY"),
-            temperature=0.1
+            temperature=0
         )
 
         # Enhanced system prompt with better query classification
@@ -191,7 +194,7 @@ class MinimalArticleAnalysisAgent:
 
 # Usage example
 if __name__ == "__main__":
-    agent = MinimalArticleAnalysisAgent()
+    agent = ArticleAnalysisAgent()
     
     while True:
         user_input = input("Ask about articles (or 'exit'): ")

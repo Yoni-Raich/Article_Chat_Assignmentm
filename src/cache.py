@@ -48,21 +48,21 @@ class QueryCache:
 
         logger.info("QueryCache initialized: max_size=%s, ttl=%ss", max_size, ttl_seconds)
 
-    def _generate_key(self, query: str, max_articles: int = 5) -> str:
+    def _generate_key(self, cache_key: str, max_articles: int = 5) -> str:
         """
-        Generate a consistent cache key from query and parameters.
+        Generate a consistent cache key from cache_key and parameters.
 
         Args:
-            query: The user's query text
+            cache_key: The cache key (can be session:query or just query)
             max_articles: Maximum articles parameter
 
         Returns:
-            MD5 hash of the normalized query data
+            MD5 hash of the normalized cache data
         """
-        # Normalize the query for consistent caching
-        normalized_query = query.lower().strip()
+        # Normalize the cache key for consistent caching
+        normalized_key = cache_key.lower().strip()
         cache_data = {
-            "query": normalized_query,
+            "key": normalized_key,
             "max_articles": max_articles
         }
 
@@ -70,18 +70,18 @@ class QueryCache:
         cache_string = json.dumps(cache_data, sort_keys=True)
         return hashlib.md5(cache_string.encode()).hexdigest()
 
-    def get(self, query: str, max_articles: int = 5) -> Optional[Dict[str, Any]]:
+    def get(self, cache_key: str, max_articles: int = 5) -> Optional[Dict[str, Any]]:
         """
         Get cached response if it exists and hasn't expired.
 
         Args:
-            query: The user's query text
+            cache_key: The cache key (can be session:query or just query)
             max_articles: Maximum articles parameter
 
         Returns:
             Cached response data or None if not found/expired
         """
-        key = self._generate_key(query, max_articles)
+        key = self._generate_key(cache_key, max_articles)
         current_time = time.time()
 
         # Check if key exists
@@ -101,19 +101,19 @@ class QueryCache:
         self.access_times[key] = current_time
         self.stats_data["hits"] += 1
 
-        logger.debug("Cache HIT: %s... (query: '%s...')", key[:8], query[:50])
+        logger.debug("Cache HIT: %s... (cache_key: '%s...')", key[:8], cache_key[:50])
         return self.cache[key]
 
-    def set(self, query: str, response: Dict[str, Any], max_articles: int = 5):
+    def set(self, cache_key: str, response: Dict[str, Any], max_articles: int = 5):
         """
-        Cache a response for the given query.
+        Cache a response for the given cache key.
 
         Args:
-            query: The user's query text
+            cache_key: The cache key (can be session:query or just query)
             response: The response data to cache
             max_articles: Maximum articles parameter
         """
-        key = self._generate_key(query, max_articles)
+        key = self._generate_key(cache_key, max_articles)
         current_time = time.time()
 
         # Check if cache is full and we need to evict
@@ -125,7 +125,7 @@ class QueryCache:
         self.timestamps[key] = current_time
         self.access_times[key] = current_time
 
-        logger.debug("Cache SET: %s... (query: '%s...')", key[:8], query[:50])
+        logger.debug("Cache SET: %s... (cache_key: '%s...')", key[:8], cache_key[:50])
 
     def _remove(self, key: str):
         """
@@ -223,18 +223,18 @@ class QueryCache:
             "statistics": self.stats_data.copy()
         }
 
-    def get_cache_info(self, query: str, max_articles: int = 5) -> Dict[str, Any]:
+    def get_cache_info(self, cache_key: str, max_articles: int = 5) -> Dict[str, Any]:
         """
-        Get information about a specific query's cache status.
+        Get information about a specific cache key's status.
 
         Args:
-            query: The user's query text
+            cache_key: The cache key (can be session:query or just query)
             max_articles: Maximum articles parameter
 
         Returns:
-            Cache information for the query
+            Cache information for the cache key
         """
-        key = self._generate_key(query, max_articles)
+        key = self._generate_key(cache_key, max_articles)
         current_time = time.time()
 
         if key not in self.cache:
