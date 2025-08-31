@@ -509,6 +509,9 @@ class VectorStore:
         Returns:
             List of chunks sorted by index
         """
+        # Use proper ChromaDB filter format for multiple conditions
+        where_filter = {"$and": [{"doc_type": "chunk"}, {"article_id": article_id}]}
+        results = self.db.get(where=where_filter)
         chunks = []
         if results and results["documents"]:
             for i, content in enumerate(results["documents"]):
