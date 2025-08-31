@@ -8,7 +8,7 @@ using web scraping and AI-powered content analysis.
 # Standard library imports
 import json
 import os
-from typing import Dict, List
+from typing import List
 
 # Third-party imports
 import requests
@@ -62,7 +62,7 @@ class ArticleProcessor:
             logger.error("Error fetching %s: %s", article_url, e)
             return article_url, ""
 
-    def process_with_llm(self, title: str, content: str) -> Dict:
+    def process_with_llm(self, title: str, content: str) -> ArticleMetadata:
         """Extract metadata using LLM"""
          # Configure the LLM with structured output using the Pydantic model
         structured_llm = self.llm.with_structured_output(ArticleMetadata)
@@ -92,50 +92,36 @@ class ArticleProcessor:
             content_for_llm = content[:4000]
             # Invoke the structured LLM
             metadata = structured_llm.invoke(prompt.format(content=content_for_llm, title=title))
-            return metadata.model_dump()
+            return metadata
         except Exception as e:
             logger.warning("LLM extraction failed: %s, using fallback", e)
             # Fallback if LLM fails
-            return {
-                "summary": title,
-                "keywords": ["article"],
-                "entities": [],
-                "sentiment": 0.0,
-                "category": "other"
-            }
+            return ArticleMetadata(
+                summary=title,
+                keywords=["article"],
+                entities=[],
+                sentiment=0.0,
+                category="other"
+            )
 
-    def process_url(self, article_url: str) -> tuple[Article, List[Chunk]]:
-        """Main processing pipeline"""
-        logger.info("Processing: %s", article_url)
+    def _generate_article_id(self, article_url: str) -> str:
+        """Generate a unique ID from article URL using hash"""
+        import hashlib
+        return hashlib.sha256(article_url.encode()).hexdigest()[:16]
 
-        # Fetch article
-        title, content = self.fetch_article(article_url)
-        if not content:
-            return None, []
-
-        # Process with LLM for metadata
-        metadata_dict = self.process_with_llm(title, content)
-
-        # Create ArticleMetadata object
-        metadata = ArticleMetadata(
-            summary=metadata_dict.get("summary", title),
-            keywords=metadata_dict.get("keywords", []),
-            entities=metadata_dict.get("entities", []),
-            sentiment=metadata_dict.get("sentiment", 0.0),
-            category=metadata_dict.get("category", "other")
-        )
-
-        article_id = article_url.replace("https://", "").replace("/", "_")
-        # Create Article object
-        article_obj = Article(
+    def _create_article_object(self, article_url: str, title: str, content: str, metadata: ArticleMetadata) -> Article:
+        """Create Article object from processed data"""
+        article_id = self._generate_article_id(article_url)
+        return Article(
             id=article_id,
             url=article_url,
             title=title,
-            content=content, # Full content stored here
+            content=content,
             metadata=metadata
         )
 
-        # 2. Chunk the content
+    def _create_chunks(self, article_id: str, content: str) -> List[Chunk]:
+        """Split content into chunks and create Chunk objects"""
         text_chunks = self.text_splitter.split_text(content)
         chunks = []
         for i, text_chunk in enumerate(text_chunks):
@@ -147,6 +133,25 @@ class ArticleProcessor:
                 index=i
             )
             chunks.append(chunk)
+        return chunks
+
+    def process_url(self, article_url: str) -> tuple[Article, List[Chunk]]:
+        """Main processing pipeline"""
+        logger.info("Processing: %s", article_url)
+
+        # Fetch article content
+        title, content = self.fetch_article(article_url)
+        if not content:
+            return None, []
+
+        # Extract metadata using LLM
+        metadata = self.process_with_llm(title, content)
+
+        # Create article object
+        article_obj = self._create_article_object(article_url, title, content, metadata)
+
+        # Create content chunks
+        chunks = self._create_chunks(article_obj.id, content)
 
         logger.info("Created %d chunks for article: %s", len(chunks), title)
         return article_obj, chunks
@@ -160,8 +165,9 @@ class ArticleProcessor:
                 processed_data.append((article, chunks))
         return processed_data
 
-    def save_to_file(self, articles: List[Article]):
-        """Save to JSON file as backup"""
+    def save_to_file(self, articles: List[Article], chunks: List[List[Chunk]] = None):
+        """Save articles and chunks to JSON files as backup"""
+        # Save articles
         with open("articles.json", "w", encoding="utf-8") as f:
             json.dump(
                 [art.model_dump() for art in articles],
@@ -170,6 +176,19 @@ class ArticleProcessor:
                 default=str
             )
         logger.info("Saved %s articles", len(articles))
+        
+        # Save chunks if provided
+        if chunks:
+            # Flatten the list of chunk lists
+            all_chunks = [chunk for chunk_list in chunks for chunk in chunk_list]
+            with open("chunks.json", "w", encoding="utf-8") as f:
+                json.dump(
+                    [chunk.model_dump() for chunk in all_chunks],
+                    f,
+                    indent=2,
+                    default=str
+                )
+            logger.info("Saved %s chunks", len(all_chunks))
 
 
 if __name__ == "__main__":
@@ -187,4 +206,4 @@ if __name__ == "__main__":
         logger.warning("Failed to process article.")
 
     if article:
-        ingestion.save_to_file([article])
+        ingestion.save_to_file([article], [chunks])

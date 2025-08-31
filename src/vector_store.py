@@ -80,54 +80,83 @@ class VectorStore:
             self.db._collection.count()
         )
 
-    def add_article_and_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
-        """Add a parent article and its content chunks to the vector store."""
-        try:
-            # 1. Create and store the parent article document (without embedding content)
-            article_doc = Document(
-                page_content=f"Article: {article.title}", # Minimal content
+    def _create_article_document(self, article: Article) -> Document:
+        """Create a document for the parent article with rich embedding content."""
+        # Create rich content for embedding that includes title, summary, keywords, and entities
+        embedding_content_parts = [
+            f"Title: {article.title}",
+            f"Summary: {article.metadata.summary}" if article.metadata.summary else "",
+            f"Category: {article.metadata.category}" if article.metadata.category else "",
+            f"Keywords: {', '.join(article.metadata.keywords)}" if article.metadata.keywords else "",
+            f"Entities: {', '.join(article.metadata.entities)}" if article.metadata.entities else ""
+        ]
+        
+        # Filter out empty parts and join with newlines
+        embedding_content = "\n".join(part for part in embedding_content_parts if part)
+        
+        return Document(
+            page_content=embedding_content,  # Rich content for better semantic search
+            metadata={
+                "doc_type": "article",
+                "id": article.id,
+                "url": article.url,
+                "title": article.title,
+                "full_content": article.content,
+                "summary": article.metadata.summary,
+                "keywords": json.dumps(article.metadata.keywords),
+                "entities": json.dumps(article.metadata.entities),
+                "sentiment": article.metadata.sentiment,
+                "category": article.metadata.category,
+                "processed_at": str(article.processed_at)
+            }
+        )
+
+    def _create_chunk_documents(self, article: Article, chunks: List[Chunk]) -> List[Document]:
+        """Create documents for article chunks."""
+        chunk_docs = []
+        for chunk in chunks:
+            chunk_doc = Document(
+                page_content=chunk.content,  # This is what gets embedded
                 metadata={
-                    "doc_type": "article",
-                    "id": article.id,
-                    "url": article.url,
+                    "doc_type": "chunk",
+                    "chunk_id": chunk.id,
+                    "article_id": chunk.article_id,
+                    "chunk_index": chunk.index,
                     "title": article.title,
-                    "full_content": article.content,
-                    "summary": article.metadata.summary,
-                    "keywords": json.dumps(article.metadata.keywords),
-                    "entities": json.dumps(article.metadata.entities),
-                    "sentiment": article.metadata.sentiment,
-                    "category": article.metadata.category,
-                    "processed_at": str(article.processed_at)
+                    "url": article.url,
                 }
             )
+            chunk_docs.append(chunk_doc)
+        return chunk_docs
+
+    def add_article(self, article: Article) -> bool:
+        """Add a parent article to the vector store."""
+        try:
+            article_doc = self._create_article_document(article)
             self.db.add_documents([article_doc], ids=[article.id])
             logger.info("Stored parent article: %s", article.title)
+            return True
+        except Exception as e:
+            logger.error("Error adding article %s: %s", article.id, e)
+            return False
 
-            # 2. Create and store documents for each chunk (with embedding)
-            chunk_docs = []
-            for chunk in chunks:
-                chunk_doc = Document(
-                    page_content=chunk.content, # This is what gets embedded
-                    metadata={
-                        "doc_type": "chunk",
-                        "chunk_id": chunk.id,
-                        "article_id": chunk.article_id,
-                        "chunk_index": chunk.index,
-                        "title": article.title,
-                        "url": article.url,
-                    }
-                )
-                chunk_docs.append(chunk_doc)
-
+    def add_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
+        """Add article chunks to the vector store."""
+        try:
+            chunk_docs = self._create_chunk_documents(article, chunks)
             if chunk_docs:
                 self.db.add_documents(chunk_docs, ids=[c.metadata['chunk_id'] for c in chunk_docs])
                 logger.info("Stored %d chunks for article: %s", len(chunk_docs), article.title)
-
             return True
-
         except Exception as e:
-            logger.error("Error adding article and chunks for %s: %s", article.id, e)
+            logger.error("Error adding chunks for article %s: %s", article.id, e)
             return False
+
+    def add_article_and_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
+        """Add a parent article and its content chunks to the vector store."""
+        article_success = self.add_article(article)
+        chunks_success = self.add_chunks(article, chunks)
+        return article_success and chunks_success
 
     def add_batch(self, processed_data: List[tuple[Article, List[Chunk]]]) -> int:
         """Add multiple articles and their chunks."""
@@ -138,56 +167,74 @@ class VectorStore:
         logger.info("Successfully added %d articles and their chunks.", added_count)
         return added_count
 
+    def _build_search_filter(self, filter_dict: Optional[Dict] = None) -> Dict:
+        """Build search filter with doc_type constraint."""
+        search_filter = {"doc_type": "chunk"}
+        if filter_dict:
+            search_filter.update(filter_dict)
+        return search_filter
+
+    def _format_search_results(self, results: List[tuple]) -> List[Dict]:
+        """Format search results from ChromaDB response."""
+        formatted_results = []
+        for doc, score in results:
+            formatted_results.append({
+                "chunk_id": doc.metadata.get("chunk_id"),
+                "article_id": doc.metadata.get("article_id"),
+                "content": doc.page_content,
+                "title": doc.metadata.get("title"),
+                "url": doc.metadata.get("url"),
+                "similarity_score": 1 - score  # Convert distance to similarity
+            })
+        return formatted_results
+
     def search_chunks(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
         """Search for relevant article chunks."""
         try:
-            # Add doc_type filter to existing filters
-            search_filter = {"doc_type": "chunk"}
-            if filter_dict:
-                search_filter.update(filter_dict)
-
-            # Perform similarity search on chunks
+            search_filter = self._build_search_filter(filter_dict)
             results = self.db.similarity_search_with_score(
                 query=query,
                 k=k,
                 filter=search_filter
             )
-
-            # Format results from chunk metadata
-            formatted_results = []
-            for doc, score in results:
-                formatted_results.append({
-                    "chunk_id": doc.metadata.get("chunk_id"),
-                    "article_id": doc.metadata.get("article_id"),
-                    "content": doc.page_content,
-                    "title": doc.metadata.get("title"),
-                    "url": doc.metadata.get("url"),
-                    "similarity_score": 1 - score  # Convert distance to similarity
-                })
-            return formatted_results
-
+            return self._format_search_results(results)
         except Exception as e:
             logger.error("Search error: %s", e)
             return []
+
+    def _reconstruct_article_from_metadata(self, metadata: Dict) -> Dict:
+        """Reconstruct article dictionary from ChromaDB metadata."""
+        return {
+            "id": metadata.get("id"),
+            "url": metadata.get("url"),
+            "title": metadata.get("title"),
+            "full_content": metadata.get("full_content"),
+            "summary": metadata.get("summary"),
+            "keywords": json.loads(metadata.get("keywords", "[]")),
+            "entities": json.loads(metadata.get("entities", "[]")),
+            "sentiment": metadata.get("sentiment"),
+            "category": metadata.get("category")
+        }
 
     def get_by_id(self, article_id: str) -> Optional[Dict]:
         """Get specific article by ID"""
         results = self.db.get(ids=[article_id], where={"doc_type": "article"})
         if results and results['documents']:
             metadata = results['metadatas'][0]
-            # Reconstruct the article dictionary from metadata
-            return {
-                "id": metadata.get("id"),
-                "url": metadata.get("url"),
-                "title": metadata.get("title"),
-                "full_content": metadata.get("full_content"),
-                "summary": metadata.get("summary"),
-                "keywords": json.loads(metadata.get("keywords", "[]")),
-                "entities": json.loads(metadata.get("entities", "[]")),
-                "sentiment": metadata.get("sentiment"),
-                "category": metadata.get("category")
-            }
+            return self._reconstruct_article_from_metadata(metadata)
         return None
+
+    def _extract_article_summary(self, metadata: Dict) -> Dict:
+        """Extract article summary from metadata (without full content)."""
+        return {
+            "id": metadata.get("id"),
+            "url": metadata.get("url"),
+            "title": metadata.get("title"),
+            "summary": metadata.get("summary"),
+            "category": metadata.get("category"),
+            "sentiment": metadata.get("sentiment"),
+            "entities": json.loads(metadata.get("entities", "[]"))
+        }
 
     def get_all_articles(self) -> List[Dict]:
         """Get all articles metadata (without full content for efficiency)"""
@@ -196,21 +243,27 @@ class VectorStore:
 
         if results and results['metadatas']:
             for metadata in results['metadatas']:
-                articles.append({
-                    "id": metadata.get("id"),
-                    "url": metadata.get("url"),
-                    "title": metadata.get("title"),
-                    "summary": metadata.get("summary"),
-                    "category": metadata.get("category"),
-                    "sentiment": metadata.get("sentiment"),
-                    "entities": json.loads(metadata.get("entities", "[]"))
-                })
+                articles.append(self._extract_article_summary(metadata))
         return articles
 
     def article_exists(self, article_id: str) -> bool:
         """Check if an article (not a chunk) already exists."""
         result = self.db.get(ids=[article_id], where={"doc_type": "article"})
         return bool(result and result['ids'])
+
+    def _format_chunk_data(self, content: str, metadata: Dict) -> Dict:
+        """Format chunk data from ChromaDB response."""
+        return {
+            "chunk_id": metadata.get("chunk_id"),
+            "article_id": metadata.get("article_id"),
+            "content": content,
+            "index": metadata.get("chunk_index"),
+        }
+
+    def _sort_chunks_by_index(self, chunks: List[Dict]) -> List[Dict]:
+        """Sort chunks by their index."""
+        chunks.sort(key=lambda x: x.get('index', 0))
+        return chunks
 
     def get_chunks_by_article_id(self, article_id: str) -> List[Dict]:
         """Get all chunks for a specific article."""
@@ -219,25 +272,23 @@ class VectorStore:
         if results and results['documents']:
             for i, content in enumerate(results['documents']):
                 metadata = results['metadatas'][i]
-                chunks.append({
-                    "chunk_id": metadata.get("chunk_id"),
-                    "article_id": metadata.get("article_id"),
-                    "content": content,
-                    "index": metadata.get("chunk_index"),
-                })
-        # Sort chunks by index
-        chunks.sort(key=lambda x: x.get('index', 0))
-        return chunks
+                chunks.append(self._format_chunk_data(content, metadata))
+        return self._sort_chunks_by_index(chunks)
+
+    def _get_chunk_ids_for_article(self, article_id: str) -> List[str]:
+        """Get all chunk IDs for a specific article."""
+        return [c['chunk_id'] for c in self.get_chunks_by_article_id(article_id)]
+
+    def _build_deletion_ids(self, article_id: str, chunk_ids: List[str]) -> List[str]:
+        """Build list of all IDs to delete (article + chunks)."""
+        return [article_id] + chunk_ids
 
     def delete_article(self, article_id: str) -> bool:
-        """Delete article from store"""
+        """Delete article and all its chunks from store."""
         try:
-            # First, get all chunk IDs for the article
-            chunk_ids_to_delete = [
-                c['chunk_id'] for c in self.get_chunks_by_article_id(article_id)
-            ]
-            # Also delete the article document itself
-            ids_to_delete = [article_id] + chunk_ids_to_delete
+            chunk_ids_to_delete = self._get_chunk_ids_for_article(article_id)
+            ids_to_delete = self._build_deletion_ids(article_id, chunk_ids_to_delete)
+            
             if ids_to_delete:
                 self.db.delete(ids=ids_to_delete)
                 logger.info("Deleted article %s and its %d chunks.", article_id, len(chunk_ids_to_delete))

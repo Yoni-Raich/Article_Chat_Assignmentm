@@ -87,13 +87,6 @@ class IngestResponse(BaseModel):
     title: Optional[str] = Field(default=None, description="Title of ingested article")
 
 
-class ErrorResponse(BaseModel):
-    """Error response model"""
-    error: str = Field(description="Error type")
-    message: str = Field(description="Error message")
-    detail: Optional[str] = Field(default=None, description="Additional error details")
-
-
 # State definition with message history for LangGraph
 class AgentState(TypedDict):
     """
