@@ -188,6 +188,44 @@ class VectorStore:
             })
         return formatted_results
 
+    def _build_article_search_filter(self, filter_dict: Optional[Dict] = None) -> Dict:
+        """Build search filter for articles with doc_type constraint."""
+        search_filter = {"doc_type": "article"}
+        if filter_dict:
+            search_filter.update(filter_dict)
+        return search_filter
+
+    def _format_article_search_results(self, results: List[tuple]) -> List[Dict]:
+        """Format article search results from ChromaDB response."""
+        formatted_results = []
+        for doc, score in results:
+            formatted_results.append({
+                "id": doc.metadata.get("id"),
+                "title": doc.metadata.get("title"),
+                "url": doc.metadata.get("url"),
+                "summary": doc.metadata.get("summary"),
+                "category": doc.metadata.get("category"),
+                "sentiment": doc.metadata.get("sentiment"),
+                "keywords": json.loads(doc.metadata.get("keywords", "[]")),
+                "entities": json.loads(doc.metadata.get("entities", "[]")),
+                "similarity_score": 1 - score  # Convert distance to similarity
+            })
+        return formatted_results
+
+    def search_articles(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
+        """Search for relevant articles based on title, summary, keywords, and entities."""
+        try:
+            search_filter = self._build_article_search_filter(filter_dict)
+            results = self.db.similarity_search_with_score(
+                query=query,
+                k=k,
+                filter=search_filter
+            )
+            return self._format_article_search_results(results)
+        except Exception as e:
+            logger.error("Article search error: %s", e)
+            return []
+
     def search_chunks(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
         """Search for relevant article chunks."""
         try:
@@ -200,6 +238,66 @@ class VectorStore:
             return self._format_search_results(results)
         except Exception as e:
             logger.error("Search error: %s", e)
+            return []
+
+    def _format_mixed_search_results(self, results: List[tuple]) -> List[Dict]:
+        """Format mixed search results (both articles and chunks) from ChromaDB response."""
+        formatted_results = []
+        for doc, score in results:
+            doc_type = doc.metadata.get("doc_type")
+            similarity_score = 1 - score  # Convert distance to similarity
+            
+            if doc_type == "article":
+                # Format as article result
+                formatted_results.append({
+                    "type": "article",
+                    "id": doc.metadata.get("id"),
+                    "title": doc.metadata.get("title"),
+                    "url": doc.metadata.get("url"),
+                    "summary": doc.metadata.get("summary"),
+                    "category": doc.metadata.get("category"),
+                    "sentiment": doc.metadata.get("sentiment"),
+                    "keywords": json.loads(doc.metadata.get("keywords", "[]")),
+                    "entities": json.loads(doc.metadata.get("entities", "[]")),
+                    "similarity_score": similarity_score
+                })
+            elif doc_type == "chunk":
+                # Format as chunk result
+                formatted_results.append({
+                    "type": "chunk",
+                    "chunk_id": doc.metadata.get("chunk_id"),
+                    "article_id": doc.metadata.get("article_id"),
+                    "content": doc.page_content,
+                    "title": doc.metadata.get("title"),
+                    "url": doc.metadata.get("url"),
+                    "similarity_score": similarity_score
+                })
+        return formatted_results
+
+    def search_all(self, query: str, k: int = 10, filter_dict: Optional[Dict] = None) -> List[Dict]:
+        """Free search across both articles and chunks for comprehensive results."""
+        try:
+            # Build filter without doc_type restriction to search everything
+            search_filter = filter_dict.copy() if filter_dict else {}
+            
+            # Perform similarity search across all document types
+            results = self.db.similarity_search_with_score(
+                query=query,
+                k=k,
+                filter=search_filter if search_filter else None
+            )
+            
+            # Format and return mixed results
+            formatted_results = self._format_mixed_search_results(results)
+            
+            # Sort by similarity score (highest first)
+            formatted_results.sort(key=lambda x: x['similarity_score'], reverse=True)
+            
+            logger.info(f"Free search returned {len(formatted_results)} results for query: '{query}'")
+            return formatted_results
+            
+        except Exception as e:
+            logger.error("Free search error: %s", e)
             return []
 
     def _reconstruct_article_from_metadata(self, metadata: Dict) -> Dict:
