@@ -220,12 +220,28 @@ class VectorStore:
             filter_dict: Additional filters to apply
             
         Returns:
-            Combined filter dictionary
+            Combined filter dictionary with proper ChromaDB operators
         """
-        search_filter = {"doc_type": doc_type} if doc_type else {}
+        # Start with base filter
+        filters = []
+        
+        # Add doc_type filter if specified
+        if doc_type:
+            filters.append({"doc_type": doc_type})
+        
+        # Add additional filters if provided
         if filter_dict:
-            search_filter.update(filter_dict)
-        return search_filter
+            for key, value in filter_dict.items():
+                filters.append({key: value})
+        
+        # Return appropriate filter structure
+        if len(filters) == 0:
+            return {}
+        elif len(filters) == 1:
+            return filters[0]
+        else:
+            # Use $and operator for multiple conditions
+            return {"$and": filters}
 
     def _convert_distance_to_similarity(self, distance: float) -> float:
         """Convert ChromaDB distance score to similarity score."""
@@ -338,6 +354,11 @@ class VectorStore:
         """
         try:
             search_filter = self._build_search_filter("chunk", filter_dict)
+            
+            # Handle empty filter case
+            if not search_filter:
+                search_filter = None
+                
             results = self.db.similarity_search_with_score(
                 query=query, k=k, filter=search_filter
             )
@@ -488,7 +509,6 @@ class VectorStore:
         Returns:
             List of chunks sorted by index
         """
-        results = self.db.get(where={"doc_type": "chunk", "article_id": article_id})
         chunks = []
         if results and results["documents"]:
             for i, content in enumerate(results["documents"]):
