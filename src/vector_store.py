@@ -6,19 +6,19 @@ using ChromaDB and Google Generative AI embeddings.
 """
 
 # Standard library imports
-import os
 import json
-from typing import List, Dict, Optional
+import os
+from typing import Dict, List, Optional, Tuple, Union
 
 # Third-party imports
 import chromadb
+from langchain.schema import Document
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.schema import Document
 
 # Local imports
-from .models import Article, Chunk
 from .logger import logger
+from .models import Article, Chunk
 
 class VectorStore:
     """
@@ -26,15 +26,21 @@ class VectorStore:
 
     This class manages storing and searching article embeddings using ChromaDB
     and Google Generative AI embeddings for semantic search capabilities.
+    
+    Attributes:
+        embeddings: The embedding provider for generating vector embeddings
+        db: ChromaDB instance for vector storage and retrieval
+        persist_directory: Local directory for ChromaDB persistence (if local)
     """
+
     def __init__(
         self,
         persist_directory: str = "./data/chroma_db",
-        embedding_provider = None,
-        chroma_host: str = None,
-        chroma_port: int = 8000
-    ):
-        """Initialize ChromaDB with Google embeddings
+        embedding_provider: Optional[GoogleGenerativeAIEmbeddings] = None,
+        chroma_host: Optional[str] = None,
+        chroma_port: int = 8000,
+    ) -> None:
+        """Initialize ChromaDB with Google embeddings.
 
         Args:
             persist_directory: Local directory for ChromaDB (when running locally)
@@ -129,8 +135,17 @@ class VectorStore:
             chunk_docs.append(chunk_doc)
         return chunk_docs
 
+    # ==================== STORAGE METHODS ====================
+
     def add_article(self, article: Article) -> bool:
-        """Add a parent article to the vector store."""
+        """Add a parent article to the vector store.
+        
+        Args:
+            article: Article object to store
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
             article_doc = self._create_article_document(article)
             self.db.add_documents([article_doc], ids=[article.id])
@@ -141,25 +156,51 @@ class VectorStore:
             return False
 
     def add_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
-        """Add article chunks to the vector store."""
+        """Add article chunks to the vector store.
+        
+        Args:
+            article: Parent article object
+            chunks: List of chunk objects to store
+            
+        Returns:
+            True if successful, False otherwise
+        """
         try:
             chunk_docs = self._create_chunk_documents(article, chunks)
             if chunk_docs:
-                self.db.add_documents(chunk_docs, ids=[c.metadata['chunk_id'] for c in chunk_docs])
-                logger.info("Stored %d chunks for article: %s", len(chunk_docs), article.title)
+                chunk_ids = [c.metadata["chunk_id"] for c in chunk_docs]
+                self.db.add_documents(chunk_docs, ids=chunk_ids)
+                logger.info(
+                    "Stored %d chunks for article: %s", len(chunk_docs), article.title
+                )
             return True
         except Exception as e:
             logger.error("Error adding chunks for article %s: %s", article.id, e)
             return False
 
     def add_article_and_chunks(self, article: Article, chunks: List[Chunk]) -> bool:
-        """Add a parent article and its content chunks to the vector store."""
+        """Add a parent article and its content chunks to the vector store.
+        
+        Args:
+            article: Article object to store
+            chunks: List of chunk objects to store
+            
+        Returns:
+            True if both article and chunks were stored successfully
+        """
         article_success = self.add_article(article)
         chunks_success = self.add_chunks(article, chunks)
         return article_success and chunks_success
 
-    def add_batch(self, processed_data: List[tuple[Article, List[Chunk]]]) -> int:
-        """Add multiple articles and their chunks."""
+    def add_batch(self, processed_data: List[Tuple[Article, List[Chunk]]]) -> int:
+        """Add multiple articles and their chunks in batch.
+        
+        Args:
+            processed_data: List of (article, chunks) tuples
+            
+        Returns:
+            Number of successfully added articles
+        """
         added_count = 0
         for article, chunks in processed_data:
             if self.add_article_and_chunks(article, chunks):
@@ -167,160 +208,200 @@ class VectorStore:
         logger.info("Successfully added %d articles and their chunks.", added_count)
         return added_count
 
-    def _build_search_filter(self, filter_dict: Optional[Dict] = None) -> Dict:
-        """Build search filter with doc_type constraint."""
-        search_filter = {"doc_type": "chunk"}
+    # ==================== PRIVATE HELPER METHODS ====================
+    
+    def _build_search_filter(
+        self, doc_type: str, filter_dict: Optional[Dict] = None
+    ) -> Dict:
+        """Build search filter with doc_type constraint.
+        
+        Args:
+            doc_type: Type of document to filter for ('article', 'chunk', or None for all)
+            filter_dict: Additional filters to apply
+            
+        Returns:
+            Combined filter dictionary
+        """
+        search_filter = {"doc_type": doc_type} if doc_type else {}
         if filter_dict:
             search_filter.update(filter_dict)
         return search_filter
 
-    def _format_search_results(self, results: List[tuple]) -> List[Dict]:
-        """Format search results from ChromaDB response."""
-        formatted_results = []
-        for doc, score in results:
-            formatted_results.append({
-                "chunk_id": doc.metadata.get("chunk_id"),
-                "article_id": doc.metadata.get("article_id"),
-                "content": doc.page_content,
-                "title": doc.metadata.get("title"),
-                "url": doc.metadata.get("url"),
-                "similarity_score": 1 - score  # Convert distance to similarity
-            })
-        return formatted_results
+    def _convert_distance_to_similarity(self, distance: float) -> float:
+        """Convert ChromaDB distance score to similarity score."""
+        return 1 - distance
 
-    def _build_article_search_filter(self, filter_dict: Optional[Dict] = None) -> Dict:
-        """Build search filter for articles with doc_type constraint."""
-        search_filter = {"doc_type": "article"}
-        if filter_dict:
-            search_filter.update(filter_dict)
-        return search_filter
-
-    def _format_article_search_results(self, results: List[tuple]) -> List[Dict]:
-        """Format article search results from ChromaDB response."""
-        formatted_results = []
-        for doc, score in results:
-            formatted_results.append({
-                "id": doc.metadata.get("id"),
-                "title": doc.metadata.get("title"),
-                "url": doc.metadata.get("url"),
-                "summary": doc.metadata.get("summary"),
-                "category": doc.metadata.get("category"),
-                "sentiment": doc.metadata.get("sentiment"),
-                "keywords": json.loads(doc.metadata.get("keywords", "[]")),
-                "entities": json.loads(doc.metadata.get("entities", "[]")),
-                "similarity_score": 1 - score  # Convert distance to similarity
-            })
-        return formatted_results
-
-    def search_articles(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
-        """Search for relevant articles based on title, summary, keywords, and entities."""
+    def _safe_json_loads(self, json_str: str, default: List = None) -> List:
+        """Safely load JSON string with fallback to default."""
+        if default is None:
+            default = []
         try:
-            search_filter = self._build_article_search_filter(filter_dict)
+            return json.loads(json_str or "[]")
+        except (json.JSONDecodeError, TypeError):
+            return default
+
+    def _format_chunk_result(self, doc: Document, score: float) -> Dict:
+        """Format a single chunk search result."""
+        return {
+            "chunk_id": doc.metadata.get("chunk_id"),
+            "article_id": doc.metadata.get("article_id"),
+            "content": doc.page_content,
+            "title": doc.metadata.get("title"),
+            "url": doc.metadata.get("url"),
+            "similarity_score": self._convert_distance_to_similarity(score),
+        }
+
+    def _format_article_result(self, doc: Document, score: float) -> Dict:
+        """Format a single article search result."""
+        return {
+            "id": doc.metadata.get("id"),
+            "title": doc.metadata.get("title"),
+            "url": doc.metadata.get("url"),
+            "summary": doc.metadata.get("summary"),
+            "category": doc.metadata.get("category"),
+            "sentiment": doc.metadata.get("sentiment"),
+            "keywords": self._safe_json_loads(doc.metadata.get("keywords")),
+            "entities": self._safe_json_loads(doc.metadata.get("entities")),
+            "similarity_score": self._convert_distance_to_similarity(score),
+        }
+
+    def _format_search_results(
+        self, results: List[Tuple], result_type: str
+    ) -> List[Dict]:
+        """Format search results from ChromaDB response.
+        
+        Args:
+            results: List of (document, score) tuples from ChromaDB
+            result_type: Type of results to format ('chunk', 'article', or 'mixed')
+            
+        Returns:
+            List of formatted result dictionaries
+        """
+        formatted_results = []
+        
+        for doc, score in results:
+            if result_type == "chunk":
+                formatted_results.append(self._format_chunk_result(doc, score))
+            elif result_type == "article":
+                formatted_results.append(self._format_article_result(doc, score))
+            elif result_type == "mixed":
+                doc_type = doc.metadata.get("doc_type")
+                if doc_type == "chunk":
+                    result = self._format_chunk_result(doc, score)
+                    result["type"] = "chunk"
+                elif doc_type == "article":
+                    result = self._format_article_result(doc, score)
+                    result["type"] = "article"
+                else:
+                    continue  # Skip unknown document types
+                formatted_results.append(result)
+                
+        return formatted_results
+
+    # ==================== SEARCH METHODS ====================
+
+    def search_articles(
+        self, query: str, k: int = 5, filter_dict: Optional[Dict] = None
+    ) -> List[Dict]:
+        """Search for relevant articles based on title, summary, keywords, and entities.
+        
+        Args:
+            query: Search query string
+            k: Number of results to return
+            filter_dict: Additional filters to apply
+            
+        Returns:
+            List of article search results with metadata
+        """
+        try:
+            search_filter = self._build_search_filter("article", filter_dict)
             results = self.db.similarity_search_with_score(
-                query=query,
-                k=k,
-                filter=search_filter
+                query=query, k=k, filter=search_filter
             )
-            return self._format_article_search_results(results)
+            return self._format_search_results(results, "article")
         except Exception as e:
             logger.error("Article search error: %s", e)
             return []
 
-    def search_chunks(self, query: str, k: int = 5, filter_dict: Optional[Dict] = None) -> List[Dict]:
-        """Search for relevant article chunks."""
+    def search_chunks(
+        self, query: str, k: int = 5, filter_dict: Optional[Dict] = None
+    ) -> List[Dict]:
+        """Search for relevant article chunks.
+        
+        Args:
+            query: Search query string
+            k: Number of results to return
+            filter_dict: Additional filters to apply
+            
+        Returns:
+            List of chunk search results with content
+        """
         try:
-            search_filter = self._build_search_filter(filter_dict)
+            search_filter = self._build_search_filter("chunk", filter_dict)
             results = self.db.similarity_search_with_score(
-                query=query,
-                k=k,
-                filter=search_filter
+                query=query, k=k, filter=search_filter
             )
-            return self._format_search_results(results)
+            return self._format_search_results(results, "chunk")
         except Exception as e:
-            logger.error("Search error: %s", e)
+            logger.error("Chunk search error: %s", e)
             return []
 
-    def _format_mixed_search_results(self, results: List[tuple]) -> List[Dict]:
-        """Format mixed search results (both articles and chunks) from ChromaDB response."""
-        formatted_results = []
-        for doc, score in results:
-            doc_type = doc.metadata.get("doc_type")
-            similarity_score = 1 - score  # Convert distance to similarity
+    def search_all(
+        self, query: str, k: int = 10, filter_dict: Optional[Dict] = None
+    ) -> List[Dict]:
+        """Free search across both articles and chunks for comprehensive results.
+        
+        Args:
+            query: Search query string
+            k: Number of results to return
+            filter_dict: Additional filters to apply (no doc_type restriction)
             
-            if doc_type == "article":
-                # Format as article result
-                formatted_results.append({
-                    "type": "article",
-                    "id": doc.metadata.get("id"),
-                    "title": doc.metadata.get("title"),
-                    "url": doc.metadata.get("url"),
-                    "summary": doc.metadata.get("summary"),
-                    "category": doc.metadata.get("category"),
-                    "sentiment": doc.metadata.get("sentiment"),
-                    "keywords": json.loads(doc.metadata.get("keywords", "[]")),
-                    "entities": json.loads(doc.metadata.get("entities", "[]")),
-                    "similarity_score": similarity_score
-                })
-            elif doc_type == "chunk":
-                # Format as chunk result
-                formatted_results.append({
-                    "type": "chunk",
-                    "chunk_id": doc.metadata.get("chunk_id"),
-                    "article_id": doc.metadata.get("article_id"),
-                    "content": doc.page_content,
-                    "title": doc.metadata.get("title"),
-                    "url": doc.metadata.get("url"),
-                    "similarity_score": similarity_score
-                })
-        return formatted_results
-
-    def search_all(self, query: str, k: int = 10, filter_dict: Optional[Dict] = None) -> List[Dict]:
-        """Free search across both articles and chunks for comprehensive results."""
+        Returns:
+            List of mixed search results sorted by similarity score
+        """
         try:
             # Build filter without doc_type restriction to search everything
             search_filter = filter_dict.copy() if filter_dict else {}
-            
+
             # Perform similarity search across all document types
             results = self.db.similarity_search_with_score(
                 query=query,
                 k=k,
-                filter=search_filter if search_filter else None
+                filter=search_filter if search_filter else None,
             )
-            
+
             # Format and return mixed results
-            formatted_results = self._format_mixed_search_results(results)
-            
+            formatted_results = self._format_search_results(results, "mixed")
+
             # Sort by similarity score (highest first)
-            formatted_results.sort(key=lambda x: x['similarity_score'], reverse=True)
-            
-            logger.info(f"Free search returned {len(formatted_results)} results for query: '{query}'")
+            formatted_results.sort(
+                key=lambda x: x["similarity_score"], reverse=True
+            )
+
+            logger.info(
+                "Free search returned %d results for query: '%s'",
+                len(formatted_results),
+                query,
+            )
             return formatted_results
-            
+
         except Exception as e:
             logger.error("Free search error: %s", e)
             return []
 
     def _reconstruct_article_from_metadata(self, metadata: Dict) -> Dict:
-        """Reconstruct article dictionary from ChromaDB metadata."""
+        """Reconstruct complete article dictionary from ChromaDB metadata."""
         return {
             "id": metadata.get("id"),
             "url": metadata.get("url"),
             "title": metadata.get("title"),
             "full_content": metadata.get("full_content"),
             "summary": metadata.get("summary"),
-            "keywords": json.loads(metadata.get("keywords", "[]")),
-            "entities": json.loads(metadata.get("entities", "[]")),
+            "keywords": self._safe_json_loads(metadata.get("keywords")),
+            "entities": self._safe_json_loads(metadata.get("entities")),
             "sentiment": metadata.get("sentiment"),
-            "category": metadata.get("category")
+            "category": metadata.get("category"),
         }
-
-    def get_by_id(self, article_id: str) -> Optional[Dict]:
-        """Get specific article by ID"""
-        results = self.db.get(ids=[article_id], where={"doc_type": "article"})
-        if results and results['documents']:
-            metadata = results['metadatas'][0]
-            return self._reconstruct_article_from_metadata(metadata)
-        return None
 
     def _extract_article_summary(self, metadata: Dict) -> Dict:
         """Extract article summary from metadata (without full content)."""
@@ -331,23 +412,8 @@ class VectorStore:
             "summary": metadata.get("summary"),
             "category": metadata.get("category"),
             "sentiment": metadata.get("sentiment"),
-            "entities": json.loads(metadata.get("entities", "[]"))
+            "entities": self._safe_json_loads(metadata.get("entities")),
         }
-
-    def get_all_articles(self) -> List[Dict]:
-        """Get all articles metadata (without full content for efficiency)"""
-        results = self.db.get(where={"doc_type": "article"})
-        articles = []
-
-        if results and results['metadatas']:
-            for metadata in results['metadatas']:
-                articles.append(self._extract_article_summary(metadata))
-        return articles
-
-    def article_exists(self, article_id: str) -> bool:
-        """Check if an article (not a chunk) already exists."""
-        result = self.db.get(ids=[article_id], where={"doc_type": "article"})
-        return bool(result and result['ids'])
 
     def _format_chunk_data(self, content: str, metadata: Dict) -> Dict:
         """Format chunk data from ChromaDB response."""
@@ -360,36 +426,98 @@ class VectorStore:
 
     def _sort_chunks_by_index(self, chunks: List[Dict]) -> List[Dict]:
         """Sort chunks by their index."""
-        chunks.sort(key=lambda x: x.get('index', 0))
-        return chunks
-
-    def get_chunks_by_article_id(self, article_id: str) -> List[Dict]:
-        """Get all chunks for a specific article."""
-        results = self.db.get(where={"doc_type": "chunk", "article_id": article_id})
-        chunks = []
-        if results and results['documents']:
-            for i, content in enumerate(results['documents']):
-                metadata = results['metadatas'][i]
-                chunks.append(self._format_chunk_data(content, metadata))
-        return self._sort_chunks_by_index(chunks)
+        return sorted(chunks, key=lambda x: x.get("index", 0))
 
     def _get_chunk_ids_for_article(self, article_id: str) -> List[str]:
         """Get all chunk IDs for a specific article."""
-        return [c['chunk_id'] for c in self.get_chunks_by_article_id(article_id)]
+        return [c["chunk_id"] for c in self.get_chunks_by_article_id(article_id)]
 
     def _build_deletion_ids(self, article_id: str, chunk_ids: List[str]) -> List[str]:
         """Build list of all IDs to delete (article + chunks)."""
         return [article_id] + chunk_ids
 
+    # ==================== RETRIEVAL METHODS ====================
+
+    def get_by_id(self, article_id: str) -> Optional[Dict]:
+        """Get specific article by ID.
+        
+        Args:
+            article_id: Unique identifier for the article
+            
+        Returns:
+            Complete article dictionary or None if not found
+        """
+        results = self.db.get(ids=[article_id], where={"doc_type": "article"})
+        if results and results["documents"]:
+            metadata = results["metadatas"][0]
+            return self._reconstruct_article_from_metadata(metadata)
+        return None
+
+    def get_all_articles(self) -> List[Dict]:
+        """Get all articles metadata (without full content for efficiency).
+        
+        Returns:
+            List of article summaries without full content
+        """
+        results = self.db.get(where={"doc_type": "article"})
+        articles = []
+
+        if results and results["metadatas"]:
+            for metadata in results["metadatas"]:
+                articles.append(self._extract_article_summary(metadata))
+        return articles
+
+    def article_exists(self, article_id: str) -> bool:
+        """Check if an article already exists.
+        
+        Args:
+            article_id: Unique identifier for the article
+            
+        Returns:
+            True if article exists, False otherwise
+        """
+        result = self.db.get(ids=[article_id], where={"doc_type": "article"})
+        return bool(result and result["ids"])
+
+    def get_chunks_by_article_id(self, article_id: str) -> List[Dict]:
+        """Get all chunks for a specific article.
+        
+        Args:
+            article_id: Unique identifier for the article
+            
+        Returns:
+            List of chunks sorted by index
+        """
+        results = self.db.get(where={"doc_type": "chunk", "article_id": article_id})
+        chunks = []
+        if results and results["documents"]:
+            for i, content in enumerate(results["documents"]):
+                metadata = results["metadatas"][i]
+                chunks.append(self._format_chunk_data(content, metadata))
+        return self._sort_chunks_by_index(chunks)
+
+    # ==================== DELETION METHODS ====================
+
     def delete_article(self, article_id: str) -> bool:
-        """Delete article and all its chunks from store."""
+        """Delete article and all its chunks from store.
+        
+        Args:
+            article_id: Unique identifier for the article to delete
+            
+        Returns:
+            True if deletion was successful, False otherwise
+        """
         try:
             chunk_ids_to_delete = self._get_chunk_ids_for_article(article_id)
             ids_to_delete = self._build_deletion_ids(article_id, chunk_ids_to_delete)
-            
+
             if ids_to_delete:
                 self.db.delete(ids=ids_to_delete)
-                logger.info("Deleted article %s and its %d chunks.", article_id, len(chunk_ids_to_delete))
+                logger.info(
+                    "Deleted article %s and its %d chunks.",
+                    article_id,
+                    len(chunk_ids_to_delete),
+                )
             return True
         except Exception as e:
             logger.error("Error deleting article %s: %s", article_id, e)
