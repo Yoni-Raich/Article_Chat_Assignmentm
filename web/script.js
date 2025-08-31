@@ -28,14 +28,14 @@ let sessionId = null;
 // Generate or retrieve session ID
 function getSessionId() {
     if (!sessionId) {
-        // Try to get from localStorage first
-        sessionId = localStorage.getItem('chat_session_id');
+        // Always generate a new unique session ID for each page load/tab
+        // This ensures complete isolation between users and browser tabs
+        sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9) + '_' + Math.random().toString(36).substr(2, 5);
         
-        if (!sessionId) {
-            // Generate new session ID
-            sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('chat_session_id', sessionId);
-        }
+        // Store in sessionStorage (tab-specific, cleared when tab closes)
+        sessionStorage.setItem('chat_session_id', sessionId);
+        
+        console.log('Generated new session ID:', sessionId);
     }
     return sessionId;
 }
@@ -43,7 +43,7 @@ function getSessionId() {
 // Clear session (for new conversation)
 function clearSession() {
     sessionId = null;
-    localStorage.removeItem('chat_session_id');
+    sessionStorage.removeItem('chat_session_id');
     // Clear chat container
     chatContainer.innerHTML = '';
 }
@@ -74,6 +74,7 @@ function addWelcomeMessage() {
                     <li>"What's the sentiment about tech companies?"</li>
                     <li>"Compare articles about Meta and Intel"</li>
                 </ul>
+                <small style="color: #666; margin-top: 10px; display: block;">Session: ${getSessionId().substr(-8)}</small>
             </div>
         </div>
     `;
