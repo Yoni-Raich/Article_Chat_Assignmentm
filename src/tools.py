@@ -70,16 +70,8 @@ def find_article_by_description(description: str) -> Dict:
     if not results:
         return {"error": f"No article found matching: '{description}'"}
     
-    article = results[0]
-    return {
-        "id": article["id"],
-        "title": article["title"],
-        "url": article["url"],
-        "summary": article["summary"],
-        "category": article["category"],
-        "keywords": article["keywords"],
-        "similarity_score": article["similarity_score"]
-    }
+    # Return the complete search result directly
+    return results[0]
 
 @tool
 def get_article_full_content(article_id: str) -> Dict:
@@ -102,22 +94,7 @@ def get_article_full_content(article_id: str) -> Dict:
     if not article:
         return {"error": f"Article with ID '{article_id}' not found"}
     
-    # Get all chunks for complete content
-    chunks = VECTOR_STORE.get_chunks_by_article_id(article_id)
-    full_text = "\n".join([chunk["content"] for chunk in chunks])
-    
-    return {
-        "id": article["id"],
-        "title": article["title"],
-        "full_content": full_text,
-        "summary": article["summary"],
-        "metadata": {
-            "category": article["category"],
-            "keywords": article["keywords"],
-            "entities": article["entities"],
-            "sentiment": article["sentiment"]
-        }
-    }
+    return article
 
 @tool
 def get_article_summary(article_id: str) -> Dict:
@@ -140,15 +117,9 @@ def get_article_summary(article_id: str) -> Dict:
     if not article:
         return {"error": f"Article with ID '{article_id}' not found"}
     
-    return {
-        "id": article["id"],
-        "title": article["title"],
-        "summary": article["summary"],
-        "category": article["category"],
-        "keywords": article["keywords"],
-        "entities": article["entities"],
-        "sentiment": article["sentiment"]
-    }
+    # Return article without full_content for efficiency
+    summary_article = {k: v for k, v in article.items() if k != "full_content"}
+    return summary_article
 
 @tool
 def search_within_article(article_id: str, query: str, max_chunks: int = 3) -> List[Dict]:
@@ -198,19 +169,8 @@ def find_articles_by_topic(topic: str, max_articles: int = 5) -> List[Dict]:
         return {"error": "Vector store not initialized"}
     
     logger.info(f"Finding articles about topic: '{topic}'")
-    articles = VECTOR_STORE.search_articles(topic, k=max_articles)
-    
-    return [
-        {
-            "id": a["id"],
-            "title": a["title"],
-            "summary": a["summary"],
-            "category": a["category"],
-            "keywords": a["keywords"],
-            "similarity_score": a["similarity_score"]
-        }
-        for a in articles
-    ]
+    # Return search results directly (already have the correct structure)
+    return VECTOR_STORE.search_articles(topic, k=max_articles)
 
 @tool
 def get_multiple_article_summaries(article_ids: List[str]) -> List[Dict]:
@@ -228,19 +188,13 @@ def get_multiple_article_summaries(article_ids: List[str]) -> List[Dict]:
         return {"error": "Vector store not initialized"}
     
     logger.info(f"Getting summaries for {len(article_ids)} articles")
-    summaries = []
     
-    for article_id in article_ids:
-        article = VECTOR_STORE.get_by_id(article_id)
-        if article:
-            summaries.append({
-                "id": article["id"],
-                "title": article["title"],
-                "summary": article["summary"],
-                "category": article["category"],
-                "keywords": article["keywords"]
-            })
+    # Get all articles summaries efficiently (without full content)
+    all_articles = VECTOR_STORE.get_all_articles()
+    article_lookup = {a["id"]: a for a in all_articles}
     
+    # Filter for requested IDs
+    summaries = [article_lookup[aid] for aid in article_ids if aid in article_lookup]
     return summaries
 
 @tool
@@ -304,14 +258,9 @@ def compare_articles_metadata(article_ids: List[str]) -> Dict:
     for article_id in article_ids:
         article = VECTOR_STORE.get_by_id(article_id)
         if article:
-            comparison["articles"].append({
-                "id": article["id"],
-                "title": article["title"],
-                "category": article["category"],
-                "sentiment": article["sentiment"],
-                "entities": article["entities"],
-                "keywords": article["keywords"]
-            })
+            # Use article data directly without reconstruction
+            article_summary = {k: v for k, v in article.items() if k != "full_content"}
+            comparison["articles"].append(article_summary)
             comparison["categories"].add(article["category"])
             comparison["sentiments"].append(article["sentiment"])
             comparison["all_entities"].update(article.get("entities", []))
@@ -433,14 +382,9 @@ def get_articles_by_category(category: str) -> List[Dict]:
     logger.info(f"Getting articles in category: '{category}'")
     all_articles = VECTOR_STORE.get_all_articles()
     
+    # Return complete article summaries for the category
     filtered_articles = [
-        {
-            "id": a["id"],
-            "title": a["title"],
-            "summary": a["summary"],
-            "sentiment": a.get("sentiment")
-        }
-        for a in all_articles
+        a for a in all_articles
         if a.get("category", "").lower() == category.lower()
     ]
     
@@ -464,14 +408,9 @@ def get_articles_by_sentiment(sentiment: str) -> List[Dict]:
     logger.info(f"Getting articles with sentiment: '{sentiment}'")
     all_articles = VECTOR_STORE.get_all_articles()
     
+    # Return complete article summaries for the sentiment
     filtered_articles = [
-        {
-            "id": a["id"],
-            "title": a["title"],
-            "summary": a["summary"],
-            "category": a.get("category")
-        }
-        for a in all_articles
+        a for a in all_articles
         if a.get("sentiment", "").lower() == sentiment.lower()
     ]
     
