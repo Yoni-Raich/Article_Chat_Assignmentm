@@ -21,7 +21,7 @@ sys.path.insert(0, project_root)
 # Local imports
 from src.agent import ArticleAnalysisAgent
 from src.vector_store import VectorStore
-from src.tools import get_list_of_tools, init_tools, search_article_chunks, get_article_details_by_id
+from src.tools import get_list_of_tools, init_tools, search_within_article, get_article_full_content
 from src.models import AgentState
 
 
@@ -40,13 +40,14 @@ class TestAgentAndTools(unittest.TestCase):
         init_tools(vector_store_instance=mock_vs_instance)
 
         # Act
-        result = search_article_chunks.invoke({"query": "test"})
+        # Test search within article tool
+        result = search_within_article.invoke({"article_id": "test_article", "query": "test"})
 
         # Assert
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['chunk_id'], 'chunk1')
-        mock_vs_instance.search_chunks.assert_called_once_with("test", k=5)
+        mock_vs_instance.search_chunks.assert_called_once_with("test", k=3, filter_dict={"article_id": "test_article"})
         print("✅ Tool 'search_article_chunks' works as expected.")
 
     def test_get_article_details_by_id_tool(self, MockVectorStore):
@@ -59,7 +60,8 @@ class TestAgentAndTools(unittest.TestCase):
         init_tools(vector_store_instance=mock_vs_instance)
 
         # Act
-        result = get_article_details_by_id.invoke({"article_id": "art1"})
+        # Test get article full content tool with valid ID
+        result = get_article_full_content.invoke({"article_id": "art1"})
 
         # Assert
         self.assertIsInstance(result, dict)
@@ -76,7 +78,8 @@ class TestAgentAndTools(unittest.TestCase):
         init_tools(vector_store_instance=mock_vs_instance)
 
         # Act
-        result = get_article_details_by_id.invoke({"article_id": "art_not_found"})
+        # Test get article full content tool with non-existent ID
+        result = get_article_full_content.invoke({"article_id": "art_not_found"})
 
         # Assert
         self.assertIn("error", result)

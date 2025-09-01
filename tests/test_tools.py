@@ -146,22 +146,21 @@ class TestToolsComprehensive(unittest.TestCase):
 
     def test_get_article_full_content_success(self):
         """Test getting full article content - success case."""
-        # Setup mock
-        self.mock_vector_store.get_by_id.return_value = self.sample_article
-        self.mock_vector_store.get_chunks_by_article_id.return_value = [
-            {"content": "First chunk content"},
-            {"content": "Second chunk content"}
-        ]
+        # Setup mock with full_content included
+        sample_article_with_content = self.sample_article.copy()
+        sample_article_with_content["full_content"] = "This is the full article content..."
+        self.mock_vector_store.get_by_id.return_value = sample_article_with_content
         
         # Execute
         result = get_article_full_content.invoke({"article_id": "art1"})
         
-        # Verify
+        # Verify - now returns the article directly
         self.assertIsInstance(result, dict)
         self.assertEqual(result["id"], "art1")
         self.assertIn("full_content", result)
-        self.assertEqual(result["full_content"], "First chunk content\nSecond chunk content")
-        self.assertIn("metadata", result)
+        self.assertEqual(result["full_content"], "This is the full article content...")
+        # No longer restructured into metadata
+        self.assertEqual(result["title"], "Test Article About AI")
         
         print("✅ get_article_full_content works for success case")
 
@@ -243,15 +242,11 @@ class TestToolsComprehensive(unittest.TestCase):
 
     def test_get_multiple_article_summaries_success(self):
         """Test getting summaries for multiple articles."""
-        # Setup mock
-        def mock_get_by_id(article_id):
-            if article_id == "art1":
-                return self.sample_article
-            elif article_id == "art2":
-                return self.sample_article_2
-            return None
-        
-        self.mock_vector_store.get_by_id.side_effect = mock_get_by_id
+        # Setup mock for the optimized get_all_articles approach
+        self.mock_vector_store.get_all_articles.return_value = [
+            self.sample_article,   # id: "art1"
+            self.sample_article_2  # id: "art2"
+        ]
         
         # Execute
         result = get_multiple_article_summaries.invoke({"article_ids": ["art1", "art2"]})

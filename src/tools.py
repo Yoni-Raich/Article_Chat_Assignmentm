@@ -155,7 +155,7 @@ def search_within_article(article_id: str, query: str, max_chunks: int = 3) -> L
 def find_articles_by_topic(topic: str, max_articles: int = 5) -> List[Dict]:
     """
     Finds multiple articles related to a specific topic or theme.
-    Returns article summaries without full content for efficiency.
+    Returns article summaries with full content.
     Use this for comparing or analyzing multiple articles.
     
     Args:

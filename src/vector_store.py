@@ -433,6 +433,7 @@ class VectorStore:
             "summary": metadata.get("summary"),
             "category": metadata.get("category"),
             "sentiment": metadata.get("sentiment"),
+            "keywords": self._safe_json_loads(metadata.get("keywords")),
             "entities": self._safe_json_loads(metadata.get("entities")),
         }
 
@@ -468,11 +469,19 @@ class VectorStore:
         Returns:
             Complete article dictionary or None if not found
         """
-        results = self.db.get(ids=[article_id], where={"doc_type": "article"})
-        if results and results["documents"]:
-            metadata = results["metadatas"][0]
-            return self._reconstruct_article_from_metadata(metadata)
-        return None
+        if not article_id or not article_id.strip():
+            logger.warning("get_by_id called with empty article_id")
+            return None
+            
+        try:
+            results = self.db.get(ids=[article_id], where={"doc_type": "article"})
+            if results and results["documents"]:
+                metadata = results["metadatas"][0]
+                return self._reconstruct_article_from_metadata(metadata)
+            return None
+        except Exception as e:
+            logger.error("Error retrieving article %s: %s", article_id, e)
+            return None
 
     def get_all_articles(self) -> List[Dict]:
         """Get all articles metadata (without full content for efficiency).
@@ -480,13 +489,21 @@ class VectorStore:
         Returns:
             List of article summaries without full content
         """
-        results = self.db.get(where={"doc_type": "article"})
-        articles = []
+        try:
+            results = self.db.get(where={"doc_type": "article"})
+            articles = []
 
-        if results and results["metadatas"]:
-            for metadata in results["metadatas"]:
-                articles.append(self._extract_article_summary(metadata))
-        return articles
+            if results and results["metadatas"]:
+                for metadata in results["metadatas"]:
+                    try:
+                        articles.append(self._extract_article_summary(metadata))
+                    except Exception as e:
+                        logger.warning("Error processing article metadata: %s", e)
+                        continue
+            return articles
+        except Exception as e:
+            logger.error("Error retrieving all articles: %s", e)
+            return []
 
     def article_exists(self, article_id: str) -> bool:
         """Check if an article already exists.
@@ -509,15 +526,23 @@ class VectorStore:
         Returns:
             List of chunks sorted by index
         """
-        # Use proper ChromaDB filter format for multiple conditions
-        where_filter = {"$and": [{"doc_type": "chunk"}, {"article_id": article_id}]}
-        results = self.db.get(where=where_filter)
-        chunks = []
-        if results and results["documents"]:
-            for i, content in enumerate(results["documents"]):
-                metadata = results["metadatas"][i]
-                chunks.append(self._format_chunk_data(content, metadata))
-        return self._sort_chunks_by_index(chunks)
+        if not article_id or not article_id.strip():
+            logger.warning("get_chunks_by_article_id called with empty article_id")
+            return []
+            
+        try:
+            # Use proper ChromaDB filter format for multiple conditions
+            where_filter = {"$and": [{"doc_type": "chunk"}, {"article_id": article_id}]}
+            results = self.db.get(where=where_filter)
+            chunks = []
+            if results and results["documents"]:
+                for i, content in enumerate(results["documents"]):
+                    metadata = results["metadatas"][i]
+                    chunks.append(self._format_chunk_data(content, metadata))
+            return self._sort_chunks_by_index(chunks)
+        except Exception as e:
+            logger.error("Error retrieving chunks for article %s: %s", article_id, e)
+            return []
 
     # ==================== DELETION METHODS ====================
 
