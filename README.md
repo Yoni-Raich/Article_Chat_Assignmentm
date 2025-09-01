@@ -2,7 +2,7 @@
 
 An intelligent article chat system that enables users to interact with a predefined set of articles through natural language queries. The system can provide summaries, extract key topics, analyze sentiment, and compare multiple articles using an LLM agent with access to a vector database.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 The system implements an **LLM Agent-based architecture** designed to answer questions from a curated article database:
 
@@ -53,7 +53,7 @@ User Query → ReAct Agent → Tools Selection → Database Search → AI Respon
 - **Google Gemini**: LLM for content processing and chat responses
 - **Docker**: Containerization for easy deployment
 
-## � Quick Start
+## Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose installed
@@ -109,7 +109,7 @@ If you prefer to run without Docker:
    python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
    ```
 
-## 🎯 Usage Examples
+## Usage Examples
 
 Once running, you can ask questions like:
 - "Summarize the article about Tesla"
@@ -118,7 +118,7 @@ Once running, you can ask questions like:
 - "Which articles discuss cybersecurity issues?"
 - "What are the key differences between the tech articles?"
 
-## 📋 Assignment Requirements Fulfilled
+## Assignment Requirements Fulfilled
 
 ✅ **Chat Interface**: Web UI and REST API endpoints  
 ✅ **Multiple Query Types**: Summaries, topics, sentiment, comparisons  
@@ -128,7 +128,7 @@ Once running, you can ask questions like:
 ✅ **Concurrent Requests**: FastAPI async support  
 ✅ **Containerized**: Docker and Docker Compose ready
 
-## 🔧 Key Design Decisions & Assumptions
+## Key Design Decisions & Assumptions
 
 ### Architecture Decisions
 

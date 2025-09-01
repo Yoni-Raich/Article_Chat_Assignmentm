@@ -41,10 +41,20 @@ class Article(BaseModel):
     entities: List[str] = Field(default_factory=list)
     processed_at: datetime = Field(default_factory=datetime.now)
 
+
+class Chunk(BaseModel):
+    """Data model for an article content chunk"""
+    id: str
+    article_id: str
+    content: str
+    index: int
+
+
 class QueryRequest(BaseModel):
     """User query request"""
     query: str = Field(description="User's question or request")
     max_articles: int = Field(default=5, description="Maximum number of articles to consider")
+    session_id: Optional[str] = Field(default=None, description="Optional session ID for conversation continuity")
 
 
 class ArticleSource(BaseModel):
@@ -63,6 +73,7 @@ class QueryResponse(BaseModel):
     )
     confidence: float = Field(default=1.0, description="Confidence score", ge=0, le=1)
     tools_used: List[str] = Field(default_factory=list, description="Tools used by agent")
+    session_id: str = Field(description="Session ID used for this conversation")
 
 
 class IngestRequest(BaseModel):
@@ -76,13 +87,6 @@ class IngestResponse(BaseModel):
     message: str = Field(description="Status message")
     article_id: Optional[str] = Field(default=None, description="ID of ingested article")
     title: Optional[str] = Field(default=None, description="Title of ingested article")
-
-
-class ErrorResponse(BaseModel):
-    """Error response model"""
-    error: str = Field(description="Error type")
-    message: str = Field(description="Error message")
-    detail: Optional[str] = Field(default=None, description="Additional error details")
 
 
 # State definition with message history for LangGraph

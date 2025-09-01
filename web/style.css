@@ -100,10 +100,19 @@ body {
 
 .chat-header {
     margin-bottom: 25px;
-    text-align: center;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
 }
 
-.chat-header h2 {
+.chat-title {
+    text-align: center;
+    flex: 1;
+}
+
+.chat-title h2 {
     color: #2d3748;
     font-size: 1.5rem;
     font-weight: 600;
@@ -114,9 +123,39 @@ body {
     gap: 10px;
 }
 
-.chat-header p {
+.chat-title p {
     color: #718096;
     font-size: 0.95rem;
+}
+
+.new-conversation-button {
+    background: linear-gradient(135deg, #48bb78, #38a169);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(72, 187, 120, 0.3);
+}
+
+.new-conversation-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+    background: linear-gradient(135deg, #38a169, #2f855a);
+}
+
+.new-conversation-button:active {
+    transform: translateY(0);
+}
+
+.new-conversation-button i {
+    font-size: 0.85rem;
 }
 
 .chat-container {

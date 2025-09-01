@@ -19,9 +19,67 @@ const toastContainer = document.getElementById('toast-container');
 const charCount = document.getElementById('char-count');
 const articleCount = document.getElementById('article-count');
 const healthStatus = document.getElementById('health-status');
+const newConversationButton = document.getElementById('new-conversation-button');
 
 // State
 let isLoading = false;
+let sessionId = null;
+
+// Generate or retrieve session ID
+function getSessionId() {
+    if (!sessionId) {
+        // Always generate a new unique session ID for each page load/tab
+        // This ensures complete isolation between users and browser tabs
+        sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9) + '_' + Math.random().toString(36).substr(2, 5);
+        
+        // Store in sessionStorage (tab-specific, cleared when tab closes)
+        sessionStorage.setItem('chat_session_id', sessionId);
+        
+        console.log('Generated new session ID:', sessionId);
+    }
+    return sessionId;
+}
+
+// Clear session (for new conversation)
+function clearSession() {
+    sessionId = null;
+    sessionStorage.removeItem('chat_session_id');
+    // Clear chat container
+    chatContainer.innerHTML = '';
+}
+
+// Start new conversation
+function startNewConversation() {
+    if (confirm('Start a new conversation? This will clear the current chat history.')) {
+        clearSession();
+        addWelcomeMessage();
+        showToast('New conversation started', 'success');
+    }
+}
+
+// Add welcome message
+function addWelcomeMessage() {
+    const welcomeDiv = document.createElement('div');
+    welcomeDiv.className = 'message bot-message';
+    welcomeDiv.innerHTML = `
+        <div class="message-avatar">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div class="message-content">
+            <div class="message-text">
+                Welcome! I can help you analyze and discuss the articles in our database. Try asking:
+                <ul>
+                    <li>"What are the main topics in the articles?"</li>
+                    <li>"Summarize the AI-related articles"</li>
+                    <li>"What's the sentiment about tech companies?"</li>
+                    <li>"Compare articles about Meta and Intel"</li>
+                </ul>
+                <small style="color: #666; margin-top: 10px; display: block;">Session: ${getSessionId().substr(-8)}</small>
+            </div>
+        </div>
+    `;
+    chatContainer.appendChild(welcomeDiv);
+}
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', () => {
@@ -49,6 +107,9 @@ function setupEventListeners() {
     });
 
     sendButton.addEventListener('click', sendMessage);
+
+    // New conversation button
+    newConversationButton.addEventListener('click', startNewConversation);
 
     // Article management event listeners
     addArticleButton.addEventListener('click', addArticle);
@@ -155,7 +216,8 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 query: message,
-                max_articles: 5
+                max_articles: 5,
+                session_id: getSessionId()
             })
         });
 
